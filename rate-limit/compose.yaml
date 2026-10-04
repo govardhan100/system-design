@@ -1,0 +1,107 @@
+services:
+  gateway:
+    image: traefik:v3.3
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=rate-limit-edge
+      - --entrypoints.web.address=:80
+      - --api.dashboard=false
+    ports:
+      - "8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - edge
+    depends_on:
+      app:
+        condition: service_healthy
+      rate-limiter:
+        condition: service_healthy
+
+  app:
+    build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks:
+      - edge
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rate-limit-edge
+      - traefik.http.routers.demo.rule=PathPrefix(`/v1`)
+      - traefik.http.routers.demo.entrypoints=web
+      - traefik.http.routers.demo.middlewares=rate-limit-check
+      - traefik.http.routers.demo.service=demo
+      - traefik.http.services.demo.loadbalancer.server.port=8000
+      - traefik.http.middlewares.rate-limit-check.forwardauth.address=http://rate-limiter:8001/authorize
+      - traefik.http.middlewares.rate-limit-check.forwardauth.forwardbody=true
+      - traefik.http.middlewares.rate-limit-check.forwardauth.maxbodysize=65536
+      - traefik.http.routers.app-health.rule=Path(`/healthz`)
+      - traefik.http.routers.app-health.entrypoints=web
+      - traefik.http.routers.app-health.priority=100
+      - traefik.http.routers.app-health.service=app-health
+      - traefik.http.services.app-health.loadbalancer.server.port=8000
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rate-limiter:
+    build: .
+    command: ["uvicorn", "app.rate_limit:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - edge
+      - rate-limit-backend
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - rate-limit-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  tests:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    environment:
+      REDIS_URL: redis://redis:6379/15
+    networks:
+      - rate-limit-backend
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  edge:
+    name: rate-limit-edge
+  rate-limit-backend:
+    name: rate-limit-backend
+    internal: true
+
+volumes:
+  redis-data:
