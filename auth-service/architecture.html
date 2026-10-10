@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Authentication service architecture and test report for the protected API stack.">
+  <title>Authentication Service | Architecture and Test Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #183a35;
+      --ink-soft: #365b55;
+      --muted: #667873;
+      --paper: #f4f7f4;
+      --white: #fff;
+      --line: #d9e3de;
+      --green: #28745d;
+      --green-pale: #e3f2e9;
+      --blue: #397c91;
+      --blue-pale: #e6f1f4;
+      --orange: #bb542e;
+      --orange-pale: #fbede5;
+      --yellow: #e7b448;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      --serif: Iowan Old Style, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper) radial-gradient(#bdcec5 0.7px, transparent 0.7px) 0 0 / 18px 18px;
+      color: var(--ink);
+      font: 15px/1.6 var(--sans);
+    }
+    a { color: var(--green); text-underline-offset: 3px; }
+    a:hover { color: var(--orange); }
+    code { font: 0.92em var(--mono); overflow-wrap: anywhere; }
+    .masthead { background: var(--ink); color: #f7faf7; }
+    .masthead-inner, main { width: min(1120px, calc(100% - 40px)); margin-inline: auto; }
+    .masthead-inner { padding: 38px 0 42px; }
+    .eyebrow, .kicker, .node-label { font: 700 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .eyebrow { color: #a9d8c4; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 720px; margin: 9px 0; font: 500 44px/1.1 var(--serif); }
+    .masthead p { max-width: 700px; margin-bottom: 0; color: #d2dfd9; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 22px; color: #b4c7bf; font: 11px var(--mono); }
+    main { padding: 36px 0 64px; }
+    section { padding: 0 0 38px; }
+    section + section { border-top: 1px solid var(--line); padding-top: 32px; }
+    .kicker { margin-bottom: 8px; color: var(--green); }
+    h2 { margin-bottom: 8px; font: 500 29px/1.15 var(--serif); }
+    h3 { margin-bottom: 7px; font-size: 16px; line-height: 1.3; }
+    .intro { max-width: 760px; margin-bottom: 20px; color: var(--muted); }
+    .diagram { overflow: hidden; border: 1px solid #cbd8d1; background: var(--white); }
+    .diagram-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 13px 16px; border-bottom: 1px solid var(--line); background: #fbfcfa; }
+    .diagram-head strong { font-size: 13px; }
+    .diagram-head span { color: var(--muted); font: 10px var(--mono); }
+    .flow {
+      display: grid;
+      grid-template-columns: minmax(100px, 0.8fr) 24px minmax(115px, 0.95fr) 24px minmax(135px, 1.1fr) 24px minmax(130px, 1fr) 24px minmax(100px, 0.8fr);
+      align-items: center;
+      gap: 7px;
+      padding: 22px 16px 14px;
+    }
+    .node { min-height: 126px; padding: 12px; border: 1px solid var(--line); border-top: 4px solid var(--green); background: var(--white); }
+    .node.gateway { border-top-color: var(--yellow); }
+    .node.auth { border-top-color: var(--orange); }
+    .node.limiter { border-top-color: var(--blue); }
+    .node.app { border-top-color: var(--green); }
+    .node-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 9px; }
+    .node h3 { margin-bottom: 5px; }
+    .node p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .arrow { position: relative; height: 2px; background: #6e8c82; }
+    .arrow::after { position: absolute; top: -4px; right: -1px; border: 5px solid transparent; border-left-color: #6e8c82; content: ""; }
+    .arrow span { position: absolute; bottom: 8px; left: 50%; width: 82px; color: var(--muted); font: 9px var(--mono); text-align: center; transform: translateX(-50%); }
+    .identity { margin: 0 16px 14px; padding: 10px 12px; border-left: 3px solid var(--blue); background: var(--blue-pale); color: var(--ink-soft); font-size: 12px; }
+    .store { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin: 0 16px 14px; padding: 12px; border: 1px solid var(--line); background: #fbfcfa; }
+    .store-label { color: var(--muted); font: 10px var(--mono); }
+    .store strong { display: block; font-size: 13px; }
+    .store p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+    .outcomes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 16px 16px; }
+    .outcome { padding: 11px 13px; border-left: 3px solid var(--green); background: var(--green-pale); }
+    .outcome.deny { border-color: var(--orange); background: var(--orange-pale); }
+    .outcome strong { display: block; margin-bottom: 3px; font: 700 10px var(--mono); }
+    .outcome p { margin: 0; color: var(--ink-soft); font-size: 11px; }
+    .boundary { padding: 11px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .sequence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 24px; margin: 18px 0 0; padding: 0; list-style: none; counter-reset: step; }
+    .sequence li { position: relative; min-height: 68px; padding: 0 0 14px 38px; counter-increment: step; }
+    .sequence li::before { position: absolute; top: 0; left: 0; color: var(--orange); content: "0" counter(step); font: 700 11px var(--mono); }
+    .sequence strong { display: block; margin-bottom: 2px; font-size: 13px; }
+    .sequence span { color: var(--muted); font-size: 12px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .detail-panel { padding-top: 12px; border-top: 3px solid var(--green); }
+    .detail-panel:nth-child(2) { border-color: var(--blue); }
+    .detail-panel h3 { margin-bottom: 10px; }
+    .detail-panel > p { color: var(--muted); font-size: 12px; }
+    .flow-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: auth-step; }
+    .flow-list li { position: relative; min-height: 52px; padding: 8px 10px 8px 39px; border: 1px solid var(--line); background: var(--white); counter-increment: auth-step; }
+    .flow-list li::before { position: absolute; top: 9px; left: 11px; color: var(--orange); content: "0" counter(auth-step); font: 700 10px var(--mono); }
+    .flow-list strong { display: block; margin-bottom: 2px; font-size: 12px; }
+    .flow-list span { display: block; color: var(--muted); font-size: 11px; }
+    .authorization { margin-top: 20px; padding: 14px 16px; border-left: 3px solid var(--blue); background: var(--blue-pale); }
+    .authorization strong { display: block; margin-bottom: 5px; font-size: 13px; }
+    .authorization p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+    .role-table { width: 100%; margin-top: 16px; border-collapse: collapse; background: var(--white); font-size: 12px; }
+    .role-table th, .role-table td { padding: 9px 11px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .role-table th { color: var(--ink-soft); font: 700 10px var(--mono); text-transform: uppercase; }
+    .scope-note { margin-top: 13px; padding: 10px 12px; border-left: 3px solid var(--yellow); background: #fff8e8; color: var(--ink-soft); font-size: 12px; }
+    .results { width: 100%; border-collapse: collapse; background: var(--white); font-size: 13px; }
+    .results th, .results td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .results th { color: var(--ink-soft); font: 700 10px var(--mono); text-transform: uppercase; }
+    .pass { color: var(--green); font-weight: 700; }
+    .smoke-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 24px; margin: 16px 0 0; padding-left: 20px; }
+    .smoke-list li { padding: 4px 0; color: var(--ink-soft); font-size: 12px; }
+    .note { margin-top: 16px; padding: 11px 13px; border-left: 3px solid var(--yellow); background: #fff8e8; color: var(--ink-soft); font-size: 12px; }
+    .token-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--line); }
+    .token-item { padding: 16px 16px 16px 0; }
+    .token-item + .token-item { padding-left: 16px; border-left: 1px solid var(--line); }
+    .token-item strong { display: block; margin-bottom: 5px; font-size: 13px; }
+    .token-item p { margin: 0; color: var(--muted); font-size: 12px; }
+    footer { padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 850px) {
+      .flow { grid-template-columns: minmax(78px, 0.8fr) 18px minmax(90px, 0.95fr) 18px minmax(105px, 1.1fr) 18px minmax(100px, 1fr) 18px minmax(78px, 0.8fr); gap: 5px; padding-inline: 10px; }
+      .node { padding: 9px; }
+      .arrow span { width: 60px; font-size: 8px; }
+    }
+    @media (max-width: 620px) {
+      .masthead-inner, main { width: min(100% - 30px, 1120px); }
+      .masthead-inner { padding: 27px 0 30px; }
+      h1 { font-size: 36px; }
+      main { padding-top: 25px; }
+      .flow { grid-template-columns: 1fr; gap: 8px; padding: 15px; }
+      .node { min-height: 0; }
+      .arrow { width: 2px; height: 20px; margin: 0 auto; }
+      .arrow::after { top: auto; right: -4px; bottom: -1px; border: 5px solid transparent; border-top-color: #6e8c82; }
+      .arrow span { bottom: auto; left: 12px; width: auto; text-align: left; transform: none; }
+      .outcomes, .sequence, .token-grid, .smoke-list, .detail-grid { grid-template-columns: 1fr; }
+      .outcomes { padding-inline: 15px; }
+      .token-item { padding: 14px 0; }
+      .token-item + .token-item { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
+      section { padding-bottom: 30px; }
+      section + section { padding-top: 25px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="eyebrow">Service design / identity boundary</div>
+      <h1>Authentication Service</h1>
+      <p>One service owns credentials, token lifecycle, account roles, and the verified identity returned to the API gateway.</p>
+      <div class="meta">
+        <span>API: FASTAPI</span>
+        <span>STORE: POSTGRESQL</span>
+        <span>ACCESS: JWT / HS256</span>
+        <span>EDGE: TRAEFIK FORWARDAUTH</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="topology-title">
+      <div class="kicker">01 / Service topology</div>
+      <h2 id="topology-title">Credentials in. Verified principal out.</h2>
+      <p class="intro">Public account routes issue credentials; protected API requests use ForwardAuth to validate tokens and load current authorization data before the gateway continues.</p>
+      <div class="diagram" role="group" aria-label="Auth service request path and private PostgreSQL store">
+        <div class="diagram-head">
+          <strong>Authentication and protected request path</strong>
+          <span>DATABASE AND REFRESH TOKENS NEVER REACH THE CLIENT</span>
+        </div>
+        <div class="flow">
+          <article class="node">
+            <span class="node-label">01 / caller</span>
+            <h3>Client</h3>
+            <p>Signs up or logs in; sends bearer token on protected calls.</p>
+          </article>
+          <div class="arrow"><span>HTTPS</span></div>
+          <article class="node gateway">
+            <span class="node-label">02 / public edge</span>
+            <h3>Traefik</h3>
+            <p>Routes <code>/auth/*</code>; checks <code>/v1/*</code> with ForwardAuth.</p>
+          </article>
+          <div class="arrow"><span>ForwardAuth</span></div>
+          <article class="node auth">
+            <span class="node-label">03 / trust decision</span>
+            <h3>Auth API</h3>
+            <p>Validates JWT and active account; reads roles and tier from SQL.</p>
+          </article>
+          <div class="arrow"><span>verified principal</span></div>
+          <article class="node limiter">
+            <span class="node-label">04 / quota gate</span>
+            <h3>Rate limiter</h3>
+            <p>Uses only the verified subject and stored tier for its quota key.</p>
+          </article>
+          <div class="arrow"><span>allow</span></div>
+          <article class="node app">
+            <span class="node-label">05 / app edge</span>
+            <h3>FastAPI app</h3>
+            <p>Receives allowed traffic with trusted identity headers.</p>
+          </article>
+        </div>
+        <div class="identity"><strong>ForwardAuth contract:</strong> auth validates the bearer token, then returns <code>X-Auth-Subject</code>, <code>X-Auth-Roles</code>, and <code>X-Auth-Tier</code>. Traefik overwrites client-supplied versions before quota or app handling.</div>
+        <div class="store">
+          <span class="store-label">AUTH SERVICE<br>SQL / PRIVATE</span>
+          <div><strong>PostgreSQL</strong><p>Users, Argon2id password hashes, roles, permissions, and hashed refresh tokens. No host-published database port.</p></div>
+        </div>
+        <div class="outcomes">
+          <div class="outcome"><strong>VALID / 204</strong><p>Verified identity proceeds to rate-limit policy evaluation.</p></div>
+          <div class="outcome deny"><strong>INVALID / 401</strong><p>Missing, malformed, expired, or wrong-audience access tokens stop at the gateway.</p></div>
+          <div class="outcome deny"><strong>UNAVAILABLE / FAIL CLOSED</strong><p>Auth or PostgreSQL failure cannot bypass verification for protected traffic.</p></div>
+        </div>
+        <div class="boundary"><strong>Network boundary:</strong> auth shares edge with Traefik and joins only the private <code>auth-backend</code> network for SQL. The app is isolated on a separate app-edge network.</div>
+      </div>
+      <ol class="sequence">
+        <li><strong>Signup or login</strong><span>Successful authentication issues a short-lived access JWT and opaque refresh token.</span></li>
+        <li><strong>Token verification</strong><span>Signature, issuer, audience, expiry, token type, subject, and active account are checked.</span></li>
+        <li><strong>Authorization data</strong><span>Roles and permissions are read from PostgreSQL, not client claims or request fields.</span></li>
+        <li><strong>Refresh and logout</strong><span>Refresh tokens rotate once; replay revokes the remaining active tokens in that family.</span></li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="authentication-title">
+      <div class="kicker">02 / Authentication</div>
+      <h2 id="authentication-title">How identity is established</h2>
+      <p class="intro">Authentication has two entry paths: credentials establish a session at signup or login; a bearer access token proves that identity again on each protected request.</p>
+      <div class="detail-grid">
+        <article class="detail-panel">
+          <h3>Signup and login</h3>
+          <p>Both public routes return an access JWT and a refresh token after credentials are accepted.</p>
+          <ol class="flow-list">
+            <li><strong>Validate and normalize email</strong><span>Email must be valid; it is stripped and lowercased. Password length is 12 to 128 characters.</span></li>
+            <li><strong>Find or create the account</strong><span>Signup rejects duplicate email; login loads the matching account and requires <code>is_active=true</code>.</span></li>
+            <li><strong>Verify or hash the password</strong><span>Passwords are checked or stored with Argon2id. Login failures use the same 401 response for unknown email and wrong password.</span></li>
+            <li><strong>Choose authorization defaults</strong><span>Signup assigns the database <code>user</code> role and <code>basic</code> tier. Request-body role and tier values are ignored.</span></li>
+            <li><strong>Issue the token pair</strong><span>Return a 15-minute access JWT and a random 14-day refresh token; store only the refresh token's SHA-256 hash in PostgreSQL.</span></li>
+          </ol>
+        </article>
+        <article class="detail-panel">
+          <h3>Protected request via ForwardAuth</h3>
+          <p>Traefik calls <code>/verify</code> before forwarding each protected <code>/v1/*</code> request.</p>
+          <ol class="flow-list">
+            <li><strong>Extract bearer credential</strong><span>Missing or malformed <code>Authorization: Bearer …</code> is rejected with 401.</span></li>
+            <li><strong>Verify the signed JWT</strong><span>PyJWT pins HS256 and requires valid signature, issuer, audience, expiry, issue time, token ID, subject, and <code>typ=access</code>.</span></li>
+            <li><strong>Reload current account state</strong><span>The token subject must match an active PostgreSQL user. Roles and permissions are loaded from SQL, not copied from the token.</span></li>
+            <li><strong>Return trusted identity</strong><span><code>/verify</code> returns 204 and subject, roles, and rate tier headers. Traefik overwrites incoming client headers.</span></li>
+            <li><strong>Continue policy checks</strong><span>The limiter uses verified subject plus stored tier; only an allowed request reaches an app replica.</span></li>
+          </ol>
+        </article>
+      </div>
+      <p class="scope-note"><strong>Failure behavior:</strong> invalid or inactive credentials return 401. If PostgreSQL/auth cannot verify the request, ForwardAuth returns a non-success response and Traefik does not forward the protected request.</p>
+    </section>
+
+    <section aria-labelledby="authorization-title">
+      <div class="kicker">03 / Authorization</div>
+      <h2 id="authorization-title">How permissions are enforced</h2>
+      <p class="intro">Authentication answers “who is calling?” Authorization compares that account's current database permissions with the requirement on a route.</p>
+      <div class="authorization">
+        <strong>Permission check for <code>GET /auth/admin/users</code></strong>
+        <p><code>current_user</code> validates the bearer token and loads the user's roles and permissions. <code>require_permission("users:read")</code> collects permission names across those roles. Missing permission returns 403; a match allows the handler to list users.</p>
+      </div>
+      <table class="role-table">
+        <thead><tr><th>Role</th><th>Assigned by</th><th>Permissions</th><th>Rate tier</th></tr></thead>
+        <tbody>
+          <tr><td><code>user</code></td><td>Automatic at signup</td><td><code>profile:read</code></td><td><code>basic</code></td></tr>
+          <tr><td><code>admin</code></td><td>Operator runs <code>auth_service.bootstrap_admin</code> for an existing account</td><td><code>profile:read</code>, <code>users:read</code></td><td>Unchanged; tier is a separate user setting</td></tr>
+        </tbody>
+      </table>
+      <p class="scope-note"><strong>Current route scope:</strong> protected <code>/v1/*</code> routes require a valid active-user token and then apply the account's rate-limit tier; they do not currently require a named role permission. The admin user-list route is the implemented permission-gated example. No client-supplied role, permission, subject, or tier is trusted.</p>
+    </section>
+
+    <section aria-labelledby="report-title">
+      <div class="kicker">04 / Verification report</div>
+      <h2 id="report-title">Test results</h2>
+      <p class="intro">Executed 2026-10-10 on macOS with Docker Engine 28.5.1 and Python 3.12 service containers.</p>
+      <table class="results">
+        <thead><tr><th>Check</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Compose configuration validation</td><td class="pass">Passed</td></tr>
+          <tr><td>Auth API and security suite</td><td class="pass">11 passed</td></tr>
+          <tr><td>Redis-backed rate-limit suite</td><td class="pass">10 passed</td></tr>
+          <tr><td>PostgreSQL migration and full-stack startup</td><td class="pass">Passed</td></tr>
+          <tr><td>Integrated Traefik smoke checks</td><td class="pass">Passed</td></tr>
+          <tr><td>Whitespace validation</td><td class="pass">Passed</td></tr>
+        </tbody>
+      </table>
+      <ul class="smoke-list">
+        <li>Missing and invalid bearer credentials returned 401.</li>
+        <li>Signup assigned `user`; a requested admin role did not elevate the account.</li>
+        <li>Admin route denied the basic user, then allowed access after operator promotion.</li>
+        <li>Forged subject, tier, and body user ID could not alter the verified principal.</li>
+        <li>Basic tier allowed five requests and rejected the sixth with 429.</li>
+        <li>Login, refresh rotation, logout, and revoked-token rejection all passed.</li>
+      </ul>
+      <p class="note">One early manual refresh probe omitted <code>Content-Type: application/json</code> and received 422; the corrected request and full rerun passed. No service code change was required.</p>
+      <p><a href="TEST_REPORT.md">Open the detailed test report</a></p>
+    </section>
+
+    <section aria-labelledby="tokens-title">
+      <div class="kicker">05 / Token lifecycle</div>
+      <h2 id="tokens-title">Short-lived access, rotating refresh</h2>
+      <div class="token-grid">
+        <article class="token-item">
+          <strong>Access JWT</strong>
+          <p>15-minute lifetime; HS256 with configured issuer and audience, subject, issue/expiry times, token ID, and access-token type.</p>
+        </article>
+        <article class="token-item">
+          <strong>Refresh token</strong>
+          <p>Opaque, 14-day lifetime. Only its SHA-256 hash is stored; each use revokes the presented token and issues a replacement.</p>
+        </article>
+        <article class="token-item">
+          <strong>Authorization</strong>
+          <p>The seeded user role grants <code>profile:read</code>; operator-granted admin includes <code>users:read</code>.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <a href="README.md">Auth service README</a>
+      <span> / </span>
+      <a href="../rate-limit/architecture.html">Integrated gateway architecture</a>
+      <span> / </span>
+      <a href="../rate-limit/compose.yaml">Compose topology</a>
+    </footer>
+  </main>
+</body>
+</html>

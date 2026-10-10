@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive authentication, authorization, and rate-limit demo console.">
+  <title>Identity Console | Auth Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #173b35;
+      --ink-soft: #385c55;
+      --muted: #6c7e78;
+      --paper: #f1f5f1;
+      --white: #fff;
+      --line: #d9e3dd;
+      --green: #28745d;
+      --green-dark: #1f5a49;
+      --green-pale: #e6f2e9;
+      --blue: #397c91;
+      --blue-pale: #e7f1f4;
+      --orange: #bb542e;
+      --orange-pale: #fbede6;
+      --yellow: #e6b348;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      --serif: Iowan Old Style, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px;
+      margin: 0;
+      background: var(--paper) radial-gradient(#bfd0c7 0.7px, transparent 0.7px) 0 0 / 18px 18px;
+      color: var(--ink);
+      font: 14px/1.5 var(--sans);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: wait; opacity: 0.55; }
+    code { font: 0.92em var(--mono); overflow-wrap: anywhere; }
+    .masthead { background: var(--ink); color: #f7faf7; }
+    .masthead-inner, main { width: min(1160px, calc(100% - 40px)); margin-inline: auto; }
+    .masthead-inner { padding: 25px 0 28px; }
+    .topline { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+    .eyebrow, .label, .section-label { font: 700 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .eyebrow { color: #a9d8c4; }
+    .service-status { display: inline-flex; align-items: center; gap: 8px; color: #d2dfd9; font: 11px var(--mono); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); }
+    .status-dot.online { background: #7bd29b; }
+    .status-dot.offline { background: #ed8a6a; }
+    h1 { margin: 16px 0 4px; font: 500 35px/1.1 var(--serif); }
+    .masthead p { max-width: 720px; margin: 0; color: #d2dfd9; font-size: 14px; }
+    main { padding: 24px 0 52px; }
+    .overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid #cdd9d2; }
+    .metric { min-height: 74px; padding: 12px 16px 12px 0; }
+    .metric + .metric { padding-left: 16px; border-left: 1px solid #cdd9d2; }
+    .metric .label { display: block; margin-bottom: 5px; color: var(--muted); }
+    .metric strong { display: block; overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .workbench { display: grid; grid-template-columns: minmax(285px, 0.78fr) minmax(0, 1.5fr); gap: 18px; margin-top: 22px; align-items: start; }
+    .panel { border: 1px solid var(--line); border-radius: 6px; background: var(--white); }
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 15px 16px 12px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 15px; line-height: 1.3; }
+    .panel-head p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .section-label { margin-bottom: 5px; color: var(--green); font-size: 9px; }
+    .auth-body { padding: 15px 16px 16px; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 15px; padding: 3px; border: 1px solid var(--line); background: #f4f7f4; }
+    .tab { min-height: 34px; border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .tab[aria-pressed="true"] { background: var(--white); color: var(--ink); box-shadow: 0 1px 3px #173b3517; }
+    .field { display: grid; gap: 5px; margin-bottom: 12px; }
+    .field label { color: var(--ink-soft); font-size: 11px; font-weight: 600; }
+    .field input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd8d1; border-radius: 4px; background: #fff; color: var(--ink); }
+    .field input:focus { outline: 2px solid #397c9140; border-color: var(--blue); }
+    .primary, .secondary, .quiet { min-height: 37px; padding: 8px 12px; border: 1px solid transparent; border-radius: 4px; font-size: 12px; font-weight: 650; }
+    .primary { background: var(--green); color: #fff; }
+    .primary:hover { background: var(--green-dark); }
+    .secondary { border-color: #a9c5c0; background: #fff; color: var(--ink); }
+    .secondary:hover { background: var(--blue-pale); }
+    .quiet { border-color: var(--line); background: #fff; color: var(--ink-soft); }
+    .quiet:hover { border-color: var(--orange); color: var(--orange); }
+    .wide { width: 100%; }
+    .form-status { min-height: 18px; margin: 10px 0 0; color: var(--muted); font-size: 11px; }
+    .form-status.error { color: #a53e25; }
+    .form-status.success { color: var(--green-dark); }
+    .session-body { padding: 16px; }
+    .session-empty { display: grid; min-height: 188px; align-content: center; justify-items: start; gap: 6px; }
+    .session-empty[hidden] { display: none; }
+    .session-empty strong { font: 500 22px/1.2 var(--serif); }
+    .session-empty p { max-width: 320px; margin: 0; color: var(--muted); font-size: 12px; }
+    .session-live { display: none; }
+    .session-live.active { display: block; }
+    .identity-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .identity-copy .label { display: block; margin-bottom: 3px; color: var(--muted); font-size: 9px; }
+    .identity-copy strong { display: block; max-width: 450px; overflow-wrap: anywhere; font-size: 14px; }
+    .session-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding-top: 13px; }
+    .fact .label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 9px; }
+    .fact strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+    .role-list { display: flex; flex-wrap: wrap; gap: 5px; }
+    .role { padding: 2px 7px; border: 1px solid #b8d5c1; border-radius: 3px; background: var(--green-pale); color: var(--green-dark); font: 10px var(--mono); }
+    .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+    .action-body { padding: 15px 16px 16px; }
+    .action-body > p { min-height: 34px; margin: 0 0 13px; color: var(--muted); font-size: 12px; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .result { min-height: 40px; margin-top: 12px; padding: 9px 10px; border-left: 3px solid var(--line); background: #f6f8f6; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .result.good { border-color: var(--green); background: var(--green-pale); color: var(--green-dark); }
+    .result.denied { border-color: var(--orange); background: var(--orange-pale); color: #813b28; }
+    .quota-line { display: flex; justify-content: space-between; gap: 10px; margin: 13px 0 7px; color: var(--muted); font: 10px var(--mono); }
+    .quota { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; height: 8px; }
+    .quota span { background: #e2e9e4; }
+    .quota span.used { background: var(--green); }
+    .quota span.blocked { background: var(--orange); }
+    .activity { margin-top: 24px; }
+    .activity-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: end; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+    .activity-head h2 { margin: 0; font-size: 14px; }
+    .activity-head span { color: var(--muted); font: 10px var(--mono); }
+    .events { display: grid; }
+    .event { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; min-height: 37px; padding: 8px 2px; border-bottom: 1px solid #e3eae5; font-size: 11px; }
+    .event time { color: var(--muted); font: 10px var(--mono); }
+    .event .event-message { min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft); }
+    .event .event-status { color: var(--muted); font: 10px var(--mono); }
+    .event .event-status.ok { color: var(--green); }
+    .event .event-status.no { color: var(--orange); }
+    .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .footer a { color: var(--green); text-underline-offset: 3px; }
+    @media (max-width: 760px) {
+      .workbench { grid-template-columns: 1fr; }
+      .actions { grid-template-columns: 1fr; }
+      .action-body > p { min-height: 0; }
+    }
+    @media (max-width: 500px) {
+      .masthead-inner, main { width: min(100% - 28px, 1160px); }
+      .masthead-inner { padding: 20px 0 22px; }
+      h1 { font-size: 30px; }
+      main { padding-top: 18px; }
+      .overview { grid-template-columns: 1fr 1fr; }
+      .metric { min-height: 65px; padding: 10px 8px 10px 0; }
+      .metric + .metric { padding-left: 10px; }
+      .metric:last-child { grid-column: 1 / -1; padding-left: 0; border-top: 1px solid #cdd9d2; border-left: 0; }
+      .workbench { gap: 12px; margin-top: 15px; }
+      .actions { gap: 12px; margin-top: 12px; }
+      .facts { grid-template-columns: 1fr 1fr; }
+      .event { grid-template-columns: 48px minmax(0, 1fr); gap: 8px; }
+      .event .event-status { grid-column: 2; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="topline">
+        <span class="eyebrow">System design / identity gateway</span>
+        <span class="service-status"><i class="status-dot" id="health-dot"></i><span id="health-label">Checking API</span></span>
+      </div>
+      <h1>Identity Console</h1>
+      <p>Authentication, permissions, and rate limits for the protected API.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="overview" aria-label="Current demo state">
+      <div class="metric"><span class="label">Session</span><strong id="overview-session">Signed out</strong></div>
+      <div class="metric"><span class="label">Authorization</span><strong id="overview-role">No principal</strong></div>
+      <div class="metric"><span class="label">Access token</span><strong id="overview-expiry">Not issued</strong></div>
+    </section>
+
+    <section class="workbench" aria-label="Authentication and principal">
+      <article class="panel">
+        <header class="panel-head">
+          <div><span class="section-label">01 / Credentials</span><h2>Account access</h2></div>
+        </header>
+        <div class="auth-body">
+          <div class="tabs" role="group" aria-label="Account action">
+            <button class="tab" type="button" data-mode="login" aria-pressed="true">Sign in</button>
+            <button class="tab" type="button" data-mode="signup" aria-pressed="false">Create account</button>
+          </div>
+          <form id="auth-form">
+            <div class="field">
+              <label for="email">Email address</label>
+              <input id="email" name="email" type="email" autocomplete="email" required maxlength="320" placeholder="name@example.com">
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" required minlength="12" maxlength="128" placeholder="12 characters minimum">
+            </div>
+            <button id="auth-submit" class="primary wide" type="submit">Sign in</button>
+          </form>
+          <p id="auth-status" class="form-status" role="status" aria-live="polite">Credentials are sent only to this local auth service.</p>
+        </div>
+      </article>
+
+      <article class="panel">
+        <header class="panel-head">
+          <div><span class="section-label">02 / Verified identity</span><h2>Current principal</h2></div>
+          <button id="reload-profile" class="quiet" type="button" disabled>Reload</button>
+        </header>
+        <div class="session-body">
+          <div id="session-empty" class="session-empty">
+            <strong>No active session</strong>
+            <p>Sign in or create a basic account to issue a bearer token and inspect its verified principal.</p>
+          </div>
+          <div id="session-live" class="session-live">
+            <div class="identity-row">
+              <div class="identity-copy"><span class="label">Authenticated account</span><strong id="profile-email">-</strong></div>
+              <div class="session-actions">
+                <button id="refresh-token" class="secondary" type="button">Refresh token</button>
+                <button id="logout" class="quiet" type="button">Sign out</button>
+              </div>
+            </div>
+            <div class="facts">
+              <div class="fact"><span class="label">Subject</span><strong id="profile-subject">-</strong></div>
+              <div class="fact"><span class="label">Role</span><div id="profile-roles" class="role-list"></div></div>
+              <div class="fact"><span class="label">Rate tier</span><strong id="profile-tier">basic</strong></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="actions" aria-label="Protected route checks">
+      <article class="panel">
+        <header class="panel-head">
+          <div><span class="section-label">03 / Authorization</span><h2>Permission check</h2></div>
+        </header>
+        <div class="action-body">
+          <p>Request <code>GET /auth/admin/users</code>, protected by the <code>users:read</code> permission.</p>
+          <div class="action-row"><button id="check-permission" class="secondary" type="button" disabled>Check admin access</button></div>
+          <div id="permission-result" class="result" role="status" aria-live="polite">Sign in to check this route.</div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <header class="panel-head">
+          <div><span class="section-label">04 / Rate limiting</span><h2>Protected work route</h2></div>
+        </header>
+        <div class="action-body">
+          <p>Send <code>POST /v1/fixed</code> as the verified principal. A basic account is limited to five requests per minute.</p>
+          <div class="action-row">
+            <button id="send-request" class="primary" type="button" disabled>Send request</button>
+            <button id="send-burst" class="secondary" type="button" disabled>Send six requests</button>
+          </div>
+          <div class="quota-line"><span>Basic-tier responses</span><span id="quota-count">0 / 5</span></div>
+          <div id="quota-bar" class="quota" aria-label="Basic-tier request count"><span></span><span></span><span></span><span></span><span></span></div>
+          <div id="work-result" class="result" role="status" aria-live="polite">Sign in to call the protected route.</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="activity" aria-labelledby="activity-title">
+      <header class="activity-head"><h2 id="activity-title">Request activity</h2><span id="activity-count">0 EVENTS</span></header>
+      <div id="events" class="events" aria-live="polite">
+        <div class="event"><time>READY</time><span class="event-message">Demo console initialized</span><span class="event-status">LOCAL</span></div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Tokens stay in page memory and are cleared when you sign out or close this tab.</span>
+      <span><a href="/auth/architecture">Auth architecture</a> · <a href="/auth/TEST_REPORT.md">Test report</a></span>
+    </footer>
+  </main>
+
+  <script>
+    const session = { accessToken: "", refreshToken: "", profile: null, mode: "login", calls: 0 };
+    const events = document.querySelector("#events");
+
+    function logEvent(message, status = "OK", tone = "ok") {
+      const row = document.createElement("div");
+      row.className = "event";
+      const time = document.createElement("time");
+      time.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const detail = document.createElement("span");
+      detail.className = "event-message";
+      detail.textContent = message;
+      const result = document.createElement("span");
+      result.className = `event-status ${tone}`;
+      result.textContent = status;
+      row.append(time, detail, result);
+      events.prepend(row);
+      while (events.children.length > 8) events.lastElementChild.remove();
+      document.querySelector("#activity-count").textContent = `${events.children.length - 1} EVENTS`;
+    }
+
+    function showResult(element, message, tone = "") {
+      element.textContent = message;
+      element.className = `result ${tone}`.trim();
+    }
+
+    async function callApi(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (session.accessToken && options.auth !== false) headers.set("Authorization", `Bearer ${session.accessToken}`);
+      let body = options.body;
+      if (body !== undefined) {
+        headers.set("Content-Type", "application/json");
+        body = JSON.stringify(body);
+      }
+      const response = await fetch(path, { method: options.method || "GET", headers, body });
+      const text = await response.text();
+      let payload = null;
+      if (text) {
+        try { payload = JSON.parse(text); }
+        catch { payload = { detail: text }; }
+      }
+      if (!response.ok) {
+        const detail = payload?.detail;
+        const message = Array.isArray(detail)
+          ? detail.map((item) => item.msg || "Invalid input").join("; ")
+          : typeof detail === "string" ? detail : `Request failed (${response.status})`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return { response, payload };
+    }
+
+    function setSignedIn(isSignedIn) {
+      document.querySelector("#session-empty").hidden = isSignedIn;
+      document.querySelector("#session-live").classList.toggle("active", isSignedIn);
+      document.querySelector("#reload-profile").disabled = !isSignedIn;
+      document.querySelector("#check-permission").disabled = !isSignedIn;
+      document.querySelector("#send-request").disabled = !isSignedIn;
+      document.querySelector("#send-burst").disabled = !isSignedIn;
+      document.querySelector("#refresh-token").disabled = !isSignedIn;
+      document.querySelector("#logout").disabled = !isSignedIn;
+      document.querySelector("#overview-session").textContent = isSignedIn ? "Authenticated" : "Signed out";
+    }
+
+    function renderProfile(profile) {
+      session.profile = profile;
+      document.querySelector("#profile-email").textContent = profile.email;
+      document.querySelector("#profile-subject").textContent = profile.subject;
+      document.querySelector("#profile-tier").textContent = profile.rate_limit_tier || "basic";
+      const roleList = document.querySelector("#profile-roles");
+      roleList.replaceChildren();
+      for (const roleName of profile.roles) {
+        const role = document.createElement("span");
+        role.className = "role";
+        role.textContent = roleName;
+        roleList.append(role);
+      }
+      document.querySelector("#overview-role").textContent = `${profile.roles.join(", ")} / ${profile.rate_limit_tier || "basic"}`;
+      setSignedIn(true);
+      updateExpiry();
+    }
+
+    function resetSession() {
+      session.accessToken = "";
+      session.refreshToken = "";
+      session.profile = null;
+      session.calls = 0;
+      document.querySelector("#overview-role").textContent = "No principal";
+      document.querySelector("#overview-expiry").textContent = "Not issued";
+      document.querySelector("#quota-count").textContent = "0 / 5";
+      document.querySelectorAll("#quota-bar span").forEach((segment) => segment.className = "");
+      document.querySelector("#profile-roles").replaceChildren();
+      showResult(document.querySelector("#permission-result"), "Sign in to check this route.");
+      showResult(document.querySelector("#work-result"), "Sign in to call the protected route.");
+      setSignedIn(false);
+    }
+
+    function updateExpiry() {
+      if (!session.accessToken) return;
+      try {
+        const encoded = session.accessToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const claims = JSON.parse(atob(encoded));
+        const remaining = Math.max(0, claims.exp - Math.floor(Date.now() / 1000));
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        document.querySelector("#overview-expiry").textContent = remaining ? `${minutes}m ${seconds}s remaining` : "Expired; refresh or sign in";
+      } catch {
+        document.querySelector("#overview-expiry").textContent = "Token active";
+      }
+    }
+
+    async function loadProfile() {
+      const { payload } = await callApi("/auth/me");
+      renderProfile(payload);
+      return payload;
+    }
+
+    async function authenticate(mode, credentials) {
+      const endpoint = mode === "signup" ? "/auth/signup" : "/auth/login";
+      const { payload } = await callApi(endpoint, { method: "POST", body: credentials, auth: false });
+      session.accessToken = payload.access_token;
+      session.refreshToken = payload.refresh_token;
+      session.calls = 0;
+      await loadProfile();
+      logEvent(mode === "signup" ? "Account created; basic role assigned" : "Credentials accepted", "201", "ok");
+      return mode === "signup" ? "Account created and signed in." : "Signed in successfully.";
+    }
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        session.mode = tab.dataset.mode;
+        document.querySelectorAll(".tab").forEach((item) => item.setAttribute("aria-pressed", String(item === tab)));
+        const signup = session.mode === "signup";
+        document.querySelector("#auth-submit").textContent = signup ? "Create account" : "Sign in";
+        document.querySelector("#password").autocomplete = signup ? "new-password" : "current-password";
+        document.querySelector("#auth-status").textContent = signup ? "New accounts receive the basic user role." : "Credentials are sent only to this local auth service.";
+        document.querySelector("#auth-status").className = "form-status";
+      });
+    });
+
+    document.querySelector("#auth-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.querySelector("#auth-submit");
+      const status = document.querySelector("#auth-status");
+      button.disabled = true;
+      status.className = "form-status";
+      try {
+        const form = new FormData(event.currentTarget);
+        const message = await authenticate(session.mode, { email: form.get("email"), password: form.get("password") });
+        status.textContent = message;
+        status.classList.add("success");
+      } catch (error) {
+        status.textContent = `${error.status || "Network"}: ${error.message}`;
+        status.classList.add("error");
+        logEvent(`${session.mode} failed: ${error.message}`, String(error.status || "ERR"), "no");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.querySelector("#reload-profile").addEventListener("click", async () => {
+      try { await loadProfile(); logEvent("Principal reloaded from PostgreSQL"); }
+      catch (error) { showResult(document.querySelector("#permission-result"), error.message, "denied"); }
+    });
+
+    document.querySelector("#refresh-token").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const { payload } = await callApi("/auth/refresh", { method: "POST", body: { refresh_token: session.refreshToken }, auth: false });
+        session.accessToken = payload.access_token;
+        session.refreshToken = payload.refresh_token;
+        await loadProfile();
+        logEvent("Refresh token rotated", "200", "ok");
+      } catch (error) {
+        logEvent(`Refresh failed: ${error.message}`, String(error.status || "ERR"), "no");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.querySelector("#logout").addEventListener("click", async () => {
+      try {
+        await callApi("/auth/logout", { method: "POST", body: { refresh_token: session.refreshToken }, auth: false });
+        logEvent("Refresh token revoked", "204", "ok");
+      } catch (error) {
+        logEvent(`Sign out request failed: ${error.message}`, String(error.status || "ERR"), "no");
+      } finally {
+        resetSession();
+        document.querySelector("#auth-status").textContent = "Signed out; in-memory tokens cleared.";
+      }
+    });
+
+    document.querySelector("#check-permission").addEventListener("click", async () => {
+      const result = document.querySelector("#permission-result");
+      try {
+        const { payload } = await callApi("/auth/admin/users");
+        showResult(result, `200 OK · users:read granted · ${payload.length} account(s) visible`, "good");
+        logEvent("Admin users permission granted", "200", "ok");
+      } catch (error) {
+        const message = error.status === 403 ? "403 Forbidden · authenticated, but missing users:read" : `${error.status || "ERR"} · ${error.message}`;
+        showResult(result, message, "denied");
+        logEvent("Admin permission check denied", String(error.status || "ERR"), "no");
+      }
+    });
+
+    async function sendWorkRequest(index = 1) {
+      const result = document.querySelector("#work-result");
+      try {
+        const { response, payload } = await callApi("/v1/fixed", { method: "POST", body: { message: `Demo request ${index}` } });
+        session.calls = Math.min(5, session.calls + 1);
+        document.querySelector("#quota-count").textContent = `${session.calls} / 5`;
+        document.querySelectorAll("#quota-bar span").forEach((segment, position) => segment.className = position < session.calls ? "used" : "");
+        showResult(result, `${response.status} OK · subject ${payload.subject} · served by ${payload.served_by}`, "good");
+        logEvent(`Protected request ${index} accepted for verified principal`, "200", "ok");
+      } catch (error) {
+        const message = error.status === 429 ? "429 Too Many Requests · basic quota reached" : `${error.status || "ERR"} · ${error.message}`;
+        showResult(result, message, "denied");
+        if (error.status === 429) document.querySelectorAll("#quota-bar span").forEach((segment) => segment.className = "blocked");
+        logEvent(`Protected request ${index} rejected`, String(error.status || "ERR"), "no");
+      }
+    }
+
+    document.querySelector("#send-request").addEventListener("click", () => sendWorkRequest());
+    document.querySelector("#send-burst").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      for (let request = 1; request <= 6; request += 1) await sendWorkRequest(request);
+      button.disabled = false;
+    });
+
+    async function checkHealth() {
+      const dot = document.querySelector("#health-dot");
+      const label = document.querySelector("#health-label");
+      try {
+        await callApi("/healthz", { auth: false });
+        dot.className = "status-dot online";
+        label.textContent = "Gateway online";
+      } catch {
+        dot.className = "status-dot offline";
+        label.textContent = "Gateway unavailable";
+      }
+    }
+
+    setSignedIn(false);
+    checkHealth();
+    window.setInterval(updateExpiry, 1000);
+  </script>
+</body>
+</html>

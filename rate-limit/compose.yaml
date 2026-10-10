@@ -13,28 +13,31 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - edge
+      - app-edge
     depends_on:
       app:
         condition: service_healthy
       rate-limiter:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
 
   app:
     build: .
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     networks:
-      - edge
+      - app-edge
     labels:
       - traefik.enable=true
-      - traefik.docker.network=rate-limit-edge
+      - traefik.docker.network=rate-limit-app-edge
       - traefik.http.routers.demo.rule=PathPrefix(`/v1`)
       - traefik.http.routers.demo.entrypoints=web
-      - traefik.http.routers.demo.middlewares=rate-limit-check
+      - traefik.http.routers.demo.middlewares=auth-check,rate-limit-check
       - traefik.http.routers.demo.service=demo
       - traefik.http.services.demo.loadbalancer.server.port=8000
+      - traefik.http.middlewares.auth-check.forwardauth.address=http://auth-service:8002/verify
+      - traefik.http.middlewares.auth-check.forwardauth.authresponseheaders=X-Auth-Subject,X-Auth-Roles,X-Auth-Tier
       - traefik.http.middlewares.rate-limit-check.forwardauth.address=http://rate-limiter:8001/authorize
-      - traefik.http.middlewares.rate-limit-check.forwardauth.forwardbody=true
-      - traefik.http.middlewares.rate-limit-check.forwardauth.maxbodysize=65536
       - traefik.http.routers.app-health.rule=Path(`/healthz`)
       - traefik.http.routers.app-health.entrypoints=web
       - traefik.http.routers.app-health.priority=100
@@ -71,6 +74,56 @@ services:
       timeout: 3s
       retries: 10
 
+  auth-service:
+    build:
+      context: ../auth-service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://auth:${AUTH_DB_PASSWORD:?Set AUTH_DB_PASSWORD in rate-limit/.env}@postgres-auth:5432/auth
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Set AUTH_JWT_SECRET in rate-limit/.env}
+      AUTH_JWT_ISSUER: auth-service
+      AUTH_JWT_AUDIENCE: system-design-api
+    networks:
+      - edge
+      - auth-backend
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=rate-limit-edge
+      - traefik.http.routers.auth-api.rule=PathPrefix(`/auth`)
+      - traefik.http.routers.auth-api.entrypoints=web
+      - traefik.http.routers.auth-api.service=auth-api
+      - traefik.http.services.auth-api.loadbalancer.server.port=8002
+      - traefik.http.routers.auth-demo.rule=Path(`/demo`)
+      - traefik.http.routers.auth-demo.entrypoints=web
+      - traefik.http.routers.auth-demo.service=auth-api
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/readyz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  postgres-auth:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?Set AUTH_DB_PASSWORD in rate-limit/.env}
+      POSTGRES_DB: auth
+    volumes:
+      - auth-data:/var/lib/postgresql/data
+    networks:
+      - auth-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth -d auth"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
@@ -96,12 +149,27 @@ services:
       redis:
         condition: service_healthy
 
+  auth-tests:
+    profiles: ["test"]
+    build:
+      context: ../auth-service
+    command: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    environment:
+      AUTH_JWT_SECRET: test-only-secret-012345678901234567890123456789
+
 networks:
   edge:
     name: rate-limit-edge
+  app-edge:
+    name: rate-limit-app-edge
+    internal: true
   rate-limit-backend:
     name: rate-limit-backend
+    internal: true
+  auth-backend:
+    name: auth-backend
     internal: true
 
 volumes:
   redis-data:
+  auth-data:

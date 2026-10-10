@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Architecture and operating guide for a Redis-backed API rate limiter behind Traefik.">
-  <title>Gateway Rate Limiter | Architecture Guide</title>
+  <meta name="description" content="Architecture and operating guide for authentication, authorization, and rate limiting behind Traefik.">
+  <title>Protected API | Solution Architecture</title>
   <style>
     :root {
       color-scheme: light;
@@ -92,25 +92,54 @@
     .diagram-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 14px 18px; border-bottom: 1px solid var(--line); background: #fbfcfa; }
     .diagram-heading strong { font-size: 13px; }
     .diagram-heading span { color: var(--muted); font: 11px var(--mono); }
-    .topology { display: grid; grid-template-columns: minmax(110px, 1fr) 40px minmax(150px, 1.2fr) 40px minmax(160px, 1.25fr) 40px minmax(110px, 0.9fr); align-items: center; gap: 8px; padding: 24px 20px 15px; }
-    .node { min-height: 140px; padding: 14px; border: 1px solid var(--line); border-top: 4px solid var(--green); background: var(--white); }
+    .topology { display: grid; grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr) 26px minmax(0, 1fr) 26px minmax(0, 1fr) 26px minmax(0, 1fr); align-items: stretch; gap: 7px; padding: 24px 18px 15px; }
+    .node { min-height: 140px; padding: 14px; border: 1px solid var(--line); border-top: 4px solid var(--green); border-radius: 4px; background: #fff; box-shadow: 0 5px 16px #193b3509; }
     .node.gateway { border-top-color: var(--yellow); }
+    .node.auth { border-top-color: var(--orange); }
     .node.limiter { border-top-color: var(--blue); }
     .node.redis { border-top-color: var(--orange); }
+    .node.app { border-top-color: var(--green); }
     .node-label { display: block; margin-bottom: 9px; color: var(--muted); font-size: 9px; }
     .node h3 { margin-bottom: 6px; }
     .node p { margin-bottom: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .node code { color: var(--ink); font-size: 11px; overflow-wrap: anywhere; }
+    .node .route-chip { display: block; margin-top: 8px; padding: 6px 7px; border-left: 2px solid var(--blue); background: var(--blue-pale); color: var(--ink-soft); font: 9px/1.35 var(--mono); overflow-wrap: anywhere; }
     .connector { position: relative; height: 2px; background: #6e8c82; }
+    .topology .connector { align-self: center; }
     .connector::after { position: absolute; top: -4px; right: -1px; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #6e8c82; content: ""; }
     .connector span { position: absolute; bottom: 8px; left: 50%; width: 76px; color: var(--muted); font: 9px var(--mono); text-align: center; transform: translateX(-50%); }
     .decision-return { margin: 2px 20px 15px; padding: 9px 12px; border-left: 3px solid var(--blue); background: var(--blue-pale); color: var(--ink-soft); font-size: 12px; }
-    .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px 18px; }
+    .branches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 20px 18px; }
     .branch { padding: 13px 15px; border-left: 3px solid var(--green); background: var(--green-pale); }
     .branch.deny { border-color: var(--orange); background: var(--orange-pale); }
     .branch strong { display: block; margin-bottom: 3px; font-family: var(--mono); font-size: 11px; }
     .branch p { margin-bottom: 0; color: var(--ink-soft); font-size: 12px; }
+    .data-stores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 20px 18px; }
+    .data-store { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); background: #fbfcfa; }
+    .data-store .store-link { color: var(--muted); font: 10px var(--mono); }
+    .data-store strong { display: block; font-size: 13px; }
+    .data-store p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
     .network-note { padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .entry-flow { display: grid; grid-template-columns: auto 22px minmax(0, 1fr) 22px minmax(0, 1.1fr) auto; align-items: center; gap: 10px; margin: 0 20px 16px; padding: 13px 15px; border: 1px dashed #d4b881; background: #fffaf0; }
+    .entry-kicker { color: #8d6816; font: 700 9px var(--mono); text-transform: uppercase; }
+    .entry-node strong { display: block; font-size: 11px; }
+    .entry-node span { display: block; color: var(--muted); font: 9px var(--mono); overflow-wrap: anywhere; }
+    .entry-arrow { position: relative; height: 1px; background: #bb9d5e; }
+    .entry-arrow::after { position: absolute; top: -4px; right: -1px; border: 4px solid transparent; border-left-color: #bb9d5e; content: ""; }
+    .entry-return { padding: 6px 8px; border: 1px solid #ecd8aa; background: #fff; color: #765717; font: 9px var(--mono); }
+    .network-map { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0 20px 16px; border: 1px solid var(--line); background: var(--line); }
+    .network-cell { min-width: 0; padding: 10px 11px; background: #f9fbf9; }
+    .network-cell strong { display: block; margin-bottom: 4px; color: var(--ink-soft); font: 700 9px var(--mono); }
+    .network-cell span { display: block; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .flow-legend { display: flex; flex-wrap: wrap; gap: 7px 17px; padding: 0 20px 15px; color: var(--muted); font: 9px var(--mono); }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-line { width: 18px; height: 2px; background: #6e8c82; }
+    .legend-line.secondary { height: 0; border-top: 1px dashed #bb9d5e; background: none; }
+    .system-branches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; padding: 0 20px 18px; }
+    .system-branch { min-width: 0; padding: 10px 11px; border-left: 3px solid var(--green); background: var(--green-pale); }
+    .system-branch.deny { border-color: var(--orange); background: var(--orange-pale); }
+    .system-branch strong { display: block; margin-bottom: 3px; font: 700 9px var(--mono); }
+    .system-branch p { margin: 0; color: var(--ink-soft); font-size: 10px; line-height: 1.4; }
     .steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 22px 0 0; padding: 0; list-style: none; counter-reset: request-step; }
     .steps li { position: relative; min-height: 72px; padding: 0 0 17px 42px; counter-increment: request-step; }
     .steps li::before { position: absolute; top: 0; left: 0; color: var(--orange); content: "0" counter(request-step); font: 700 12px var(--mono); }
@@ -150,14 +179,18 @@
     .guardrail p { margin: 0; color: var(--muted); font-size: 12px; }
     .footer { padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 
+    @media (min-width: 621px) {
+      .topology .connector span { display: none; }
+    }
     @media (max-width: 900px) {
       .page { grid-template-columns: 1fr; gap: 24px; }
       .rail { position: static; }
       .rail nav { display: flex; flex-wrap: wrap; border-left: 0; border-bottom: 1px solid var(--line); }
       .rail a { padding: 7px 10px 9px 0; margin-right: 12px; }
-      .topology { grid-template-columns: minmax(100px, 1fr) 28px minmax(130px, 1.2fr) 28px minmax(140px, 1.2fr); }
-      .topology .redis { grid-column: 3 / 6; }
-      .topology .connector.redis-link { display: none; }
+      .topology { grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr); gap: 5px; padding-inline: 12px; }
+      .topology .node { padding: 10px; }
+      .topology .connector span { width: 55px; font-size: 8px; }
+      .network-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 620px) {
       .masthead-inner, .page { width: min(100% - 30px, 1240px); }
@@ -166,11 +199,20 @@
       .page { padding-top: 23px; }
       .topology { grid-template-columns: 1fr; gap: 8px; padding: 16px; }
       .node { min-height: 0; }
-      .topology .connector, .topology .connector.redis-link { display: block; width: 2px; height: 20px; margin: 0 auto; }
+      .topology .connector { display: block; width: 2px; height: 20px; margin: 0 auto; }
       .topology .connector::after { top: auto; right: -4px; bottom: -1px; border: 5px solid transparent; border-top-color: #6e8c82; }
       .topology .connector span { bottom: auto; left: 12px; width: auto; text-align: left; transform: none; }
-      .topology .redis { grid-column: auto; }
+      .entry-flow { grid-template-columns: 1fr; gap: 8px; margin-inline: 15px; }
+      .entry-arrow { width: 2px; height: 14px; margin-left: 12px; }
+      .entry-arrow::after { top: auto; right: -3px; bottom: -1px; border: 4px solid transparent; border-top-color: #bb9d5e; }
+      .network-map { grid-template-columns: 1fr 1fr; margin-inline: 15px; }
+      .system-branches { grid-template-columns: 1fr 1fr; padding-inline: 15px; }
+      .flow-legend { padding-inline: 15px; }
       .branches, .steps, .policy-grid, .script-grid, .run-grid, .guardrails { grid-template-columns: 1fr; }
+      .run-grid { grid-template-columns: minmax(0, 1fr); }
+      .run-grid > * { min-width: 0; }
+      .run-grid pre { max-width: 100%; }
+      .data-stores { grid-template-columns: 1fr; padding-inline: 16px; }
       .branches { padding-inline: 16px; }
       .policy { padding: 16px 0; }
       .policy + .policy { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
@@ -188,14 +230,14 @@
 <body>
   <header class="masthead">
     <div class="masthead-inner">
-      <div class="eyebrow">System design / request control</div>
-      <h1>Gateway Rate Limiter</h1>
-      <p>A request-by-request guide to Traefik, a dedicated Python limiter, Redis-backed algorithms, and horizontally scaled application servers.</p>
+      <div class="eyebrow">System design / identity and request control</div>
+      <h1>Protected API</h1>
+      <p>Authentication establishes the principal; authorization and rate limits are enforced before traffic reaches the application.</p>
       <div class="masthead-meta">
         <span>LOCAL STACK: DOCKER COMPOSE</span>
         <span>EDGE: TRAEFIK</span>
-        <span>STATE: REDIS</span>
-        <span>APP: FASTAPI</span>
+        <span>AUTH STATE: POSTGRESQL</span>
+        <span>QUOTA STATE: REDIS</span>
       </div>
     </div>
   </header>
@@ -204,76 +246,120 @@
     <aside class="rail" aria-label="Page contents">
       <div class="rail-title">On this page</div>
       <nav>
-        <a href="#request-path">Request path</a>
+        <a href="#request-path">Solution architecture</a>
         <a href="#policies">Policies</a>
         <a href="#redis-state">Redis state</a>
         <a href="#run-test">Run and test</a>
-        <a href="#guardrails">Guardrails</a>
+        <a href="#guardrails">Security boundaries</a>
       </nav>
     </aside>
 
     <main>
       <section id="request-path">
         <div class="section-kicker">01 / Topology</div>
-        <h2>Check at the edge. Share state centrally.</h2>
-        <p class="section-intro">The gateway asks the rate-limit service before proxying an allowed request. Redis stores the shared counters, so every app replica sees the same user quota.</p>
+        <h2>Every request crosses the right trust boundary.</h2>
+        <p class="section-intro">This is the complete local system: account and token operations, protected API traffic, data stores, private networks, and the decisions that allow or stop each request.</p>
 
-        <div class="diagram-shell" role="group" aria-label="Rate limiter architecture and request flow">
+        <div class="diagram-shell" role="group" aria-label="Authentication, authorization, and rate limiter solution architecture">
           <div class="diagram-heading">
-            <strong>Request and decision path</strong>
-            <span>DENIED REQUESTS NEVER REACH THE APP POOL</span>
+            <strong>Protected API / complete system map</strong>
+            <span>DOCKER COMPOSE · PUBLIC ENTRY POINT :8080</span>
           </div>
           <div class="topology">
             <article class="node client">
-              <span class="node-label">01 / ingress</span>
+              <span class="node-label">01 / caller</span>
               <h3>Client</h3>
-              <p><code>POST /v1/fixed</code><br>JSON includes <code>user_id</code></p>
+              <p>Carries a bearer JWT on protected calls. Caller-supplied identity and tier are never trusted.</p>
+              <span class="route-chip data-route">Authorization: Bearer &lt;token&gt;</span>
             </article>
             <div class="connector"><span>HTTP</span></div>
             <article class="node gateway">
-              <span class="node-label">02 / gateway + load balancer</span>
+              <span class="node-label">02 / public edge</span>
               <h3>Traefik</h3>
-              <p>ForwardAuth checks first; load balances allowed traffic.</p>
+              <p>Orders auth, quota checks, and app routing.</p>
             </article>
             <div class="connector"><span>ForwardAuth</span></div>
+            <article class="node auth">
+              <span class="node-label">03 / identity and access</span>
+              <h3>Auth service</h3>
+              <p>Validates JWT and account state; returns trusted subject, roles, and tier.</p>
+            </article>
+            <div class="connector"><span>verified headers</span></div>
             <article class="node limiter">
-              <span class="node-label">03 / decision point</span>
+              <span class="node-label">04 / quota decision</span>
               <h3>FastAPI limiter</h3>
-              <p>Validates ID, resolves route policy, runs one atomic Redis script.</p>
+              <p>Uses verified subject and tier; selects server policy and runs an atomic check.</p>
             </article>
-            <div class="connector redis-link"><span>EVAL</span></div>
-            <article class="node redis">
-              <span class="node-label">04 / shared state</span>
-              <h3>Redis</h3>
-              <p>Counter, request timestamps, or token-bucket state.</p>
+            <div class="connector"><span>allow</span></div>
+            <article class="node app">
+              <span class="node-label">05 / private app edge</span>
+              <h3>FastAPI app</h3>
+              <p>Receives allowed requests with verified principal headers.</p>
             </article>
           </div>
-          <div class="decision-return"><strong>04 / Decision returns:</strong> Redis replies to the limiter with allow/deny and remaining quota. The limiter returns 2xx to continue or 429 to reject; Redis errors fail closed with 503.</div>
-          <div class="branches">
-            <div class="branch">
-              <strong>05a / ALLOW</strong>
-              <p>Traefik forwards the original request to one FastAPI replica. The app handles business logic and returns its response through the gateway.</p>
+          <div class="data-stores">
+            <article class="data-store">
+              <span class="store-link">AUTH SERVICE<br>SQL / PRIVATE</span>
+              <div><strong>PostgreSQL</strong><p>Users, roles, permissions, and hashed refresh tokens.</p></div>
+            </article>
+            <article class="data-store">
+              <span class="store-link">RATE LIMITER<br>REDIS / PRIVATE</span>
+              <div><strong>Redis</strong><p>Atomic counters, request timestamps, or token-bucket state.</p></div>
+            </article>
+          </div>
+          <div class="entry-flow" aria-label="Credential and demo route from client through Traefik to auth service and PostgreSQL">
+            <span class="entry-kicker">Credential + demo path</span>
+            <div class="entry-arrow" aria-hidden="true"></div>
+            <div class="entry-node"><strong>Traefik routes to auth</strong><span>/auth/signup · /login · /refresh · /logout · /demo</span></div>
+            <div class="entry-arrow" aria-hidden="true"></div>
+            <div class="entry-node"><strong>Auth service ↔ PostgreSQL</strong><span>Argon2id hashes · accounts · roles · permissions · refresh hashes</span></div>
+            <span class="entry-return">Access JWT + refresh token → client</span>
+          </div>
+          <div class="network-map" aria-label="Exact Compose network membership">
+            <div class="network-cell"><strong>edge</strong><span>Traefik · auth service · rate limiter</span></div>
+            <div class="network-cell"><strong>app-edge · internal</strong><span>Traefik · application replicas</span></div>
+            <div class="network-cell"><strong>auth-backend · internal</strong><span>Auth service · PostgreSQL</span></div>
+            <div class="network-cell"><strong>rate-limit-backend · internal</strong><span>Rate limiter · Redis</span></div>
+          </div>
+          <div class="flow-legend">
+            <span class="legend-item"><i class="legend-line"></i>Protected request and verified identity</span>
+            <span class="legend-item"><i class="legend-line secondary"></i>Credential and token issuance</span>
+            <span class="legend-item">Only Traefik publishes a host port</span>
+          </div>
+          <div class="system-branches">
+            <div class="system-branch">
+              <strong>ALLOW / 2xx</strong>
+              <p>Verified identity and allowed request reach an app replica; response returns through Traefik.</p>
             </div>
-            <div class="branch deny">
-              <strong>05b / DENY</strong>
-              <p>Traefik returns <code>429 Too Many Requests</code> with <code>Retry-After</code>. No app replica receives the request.</p>
+            <div class="system-branch deny">
+              <strong>401 / UNAUTHENTICATED</strong>
+              <p>Missing, invalid, expired, or inactive-account credentials stop at auth.</p>
+            </div>
+            <div class="system-branch deny">
+              <strong>403 / FORBIDDEN</strong>
+              <p>Valid identity lacks the route's required permission.</p>
+            </div>
+            <div class="system-branch deny">
+              <strong>429 / 503</strong>
+              <p>Quota exceeded or auth, SQL, or Redis unavailable; protected traffic fails closed.</p>
             </div>
           </div>
-          <div class="network-note"><strong>Network boundary:</strong> limiter connects to both edge and private Redis networks. Redis is private; app replicas and Traefik do not join the Redis network.</div>
+          <div class="network-note"><strong>Isolation:</strong> app replicas cannot reach auth, PostgreSQL, limiter, or Redis directly. PostgreSQL and Redis are not host-published; only Traefik exposes port <code>8080</code>.</div>
         </div>
 
         <ol class="steps">
-          <li><strong>Client sends a request</strong><span>Payload includes <code>user_id</code>; the client does not choose an algorithm or limit.</span></li>
-          <li><strong>Gateway calls ForwardAuth</strong><span>Traefik forwards method, URI, and a body capped at 64 KiB.</span></li>
-          <li><strong>Limiter chooses policy</strong><span>Route plus server-owned user tier determine algorithm and quota.</span></li>
-          <li><strong>Redis runs the decision atomically</strong><span>One Lua script updates state and decides whether this request fits.</span></li>
+          <li><strong>Client obtains credentials</strong><span>Signup or login returns a short-lived access JWT and a rotating refresh token.</span></li>
+          <li><strong>Traefik authenticates protected traffic</strong><span>ForwardAuth validates the bearer token and account state before quota checks.</span></li>
+          <li><strong>Auth resolves stored authorization</strong><span>PostgreSQL supplies roles and tier; Traefik overwrites client identity headers with verified values.</span></li>
+          <li><strong>Limiter checks the verified principal</strong><span>Route, trusted tier, and subject determine policy and the per-principal Redis key.</span></li>
+          <li><strong>Allowed traffic reaches the app</strong><span>Application replicas are on a separate network and receive no request rejected at the edge.</span></li>
         </ol>
       </section>
 
       <section id="policies">
         <div class="section-kicker">02 / Policy choices</div>
         <h2>Three algorithms, configured by route</h2>
-        <p class="section-intro">Policies are defined server-side in <code>app/policies.py</code>. Basic is the default tier; only the configured demo identity receives premium limits.</p>
+        <p class="section-intro">Policies are defined server-side in <code>app/policies.py</code>. New accounts receive the basic tier; an operator may assign premium in PostgreSQL.</p>
         <div class="policy-grid">
           <article class="policy">
             <div class="route">POST /v1/fixed</div>
@@ -303,11 +389,11 @@
       <section id="redis-state">
         <div class="section-kicker">03 / State and atomicity</div>
         <h2>One key per user, route, and algorithm</h2>
-        <p class="section-intro">The limiter hashes the user ID before using it in Redis. Every app and limiter instance can share the same Redis-backed state; the script itself performs the read, decision, and write without a race between those steps.</p>
+        <p class="section-intro">The limiter hashes the verified subject before using it in Redis. Every limiter instance shares the same state; each script performs its read, decision, and write atomically.</p>
         <div class="key-flow">
-          <span class="input">user_id + route + algorithm</span>
+          <span class="input">verified subject + route + algorithm</span>
           <span class="arrow" aria-hidden="true">&gt;</span>
-          <code class="key">rate-limit:v1:{algorithm}:{route}:{sha256(user_id)}</code>
+          <code class="key">rate-limit:v1:{algorithm}:{route}:{sha256(subject)}</code>
         </div>
         <div class="script-grid">
           <article class="script">
@@ -329,44 +415,52 @@
       <section id="run-test">
         <div class="section-kicker">04 / Operator guide</div>
         <h2>Start it and exercise the request path</h2>
-        <p class="section-intro">Run these commands from the project directory. Docker Compose starts Traefik, Redis, the limiter, and three application replicas.</p>
+        <p class="section-intro">Run these commands from <code>rate-limit/</code>. Configure local secrets first; Compose starts PostgreSQL, auth, Redis, the limiter, Traefik, and app replicas. The interactive console is at <code>http://localhost:8080/demo</code>.</p>
         <div class="run-grid">
           <div>
             <h3>Start the stack</h3>
-            <pre><code>docker compose up --build --scale app=3</code></pre>
-            <h3>Send a request through the gateway</h3>
+            <pre><code>cp .env.example .env
+# Set AUTH_JWT_SECRET and AUTH_DB_PASSWORD to random values.
+docker compose up --build --scale app=3</code></pre>
+            <h3>Create an account and call a protected route</h3>
             <pre><code>curl -i http://localhost:8080/v1/fixed \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":"manual-test-user","message":"hello"}'</code></pre>
+  -d '{"message":"hello"}'</code></pre>
             <h3>Run automated tests</h3>
-            <pre><code>docker compose --profile test run --build --rm tests</code></pre>
+            <pre><code>docker compose --profile test run --build --rm auth-tests
+docker compose --profile test run --build --rm tests</code></pre>
           </div>
           <aside class="response-note">
             <strong>What to expect</strong>
-            <p>For a new basic user on <code>/v1/fixed</code>, five quick requests should pass and the sixth should return <code>429</code> with <code>Retry-After</code>. Try <code>/v1/sliding</code> and <code>/v1/token</code> to exercise the other algorithms. Use a different user ID for a fresh quota.</p>
+            <p>For a basic account on <code>/v1/fixed</code>, five quick requests should pass and the sixth should return <code>429</code>. Sign up at <code>/auth/signup</code>; never send a user ID in business JSON.</p>
           </aside>
         </div>
       </section>
 
       <section id="guardrails">
         <div class="section-kicker">05 / Reliability and security</div>
-        <h2>What this demo assumes</h2>
+        <h2>Trust starts at the gateway</h2>
         <div class="guardrails">
           <article class="guardrail">
-            <strong>Payload IDs need trusted identity</strong>
-            <p>This demo reads <code>user_id</code> from JSON but does not authenticate it. In production, verify the caller and bind this ID to the authenticated principal.</p>
+            <strong>Client identity is never trusted</strong>
+            <p>ForwardAuth validates JWT issuer, audience, signature, expiry, and active account. Auth response headers overwrite caller-supplied identity and tier headers.</p>
           </article>
           <article class="guardrail">
-            <strong>Backend failure is fail-closed</strong>
-            <p>If Redis cannot be reached, protected requests get <code>503</code> rather than bypassing the quota. Readiness checks Redis; liveness does not.</p>
+            <strong>Authorization is data-backed</strong>
+            <p>Roles and permissions are stored in PostgreSQL. Public registration always assigns the basic user role; promote administrators with the operator command.</p>
+          </article>
+          <article class="guardrail">
+            <strong>Dependencies fail closed</strong>
+            <p>Auth or PostgreSQL failure rejects protected requests; Redis failure returns <code>503</code>. No backend outage bypasses checks.</p>
           </article>
           <article class="guardrail">
             <strong>Sliding logs trade memory for precision</strong>
             <p>One sorted-set member is kept per allowed request during the window. A high-volume service may choose an approximate sliding counter instead.</p>
           </article>
           <article class="guardrail">
-            <strong>Local Docker wiring is not production hardening</strong>
-            <p>Compose uses the Docker socket for Traefik discovery and one Redis instance. Production needs secured discovery and Redis availability, capacity, and access controls.</p>
+            <strong>Use deployment-managed secrets</strong>
+            <p>Local Compose reads JWT and database secrets from an ignored <code>.env</code>. Production should use a managed secret store, TLS, secured service discovery, and highly available databases.</p>
           </article>
         </div>
       </section>

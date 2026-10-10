@@ -16,12 +16,13 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/15")
 
 
 def test_policies_are_selected_by_route_and_server_owned_tier() -> None:
-    basic = resolve_policy("/v1/fixed", "ordinary-user")
-    premium = resolve_policy("/v1/fixed", "premium-demo-user")
+    basic = resolve_policy("/v1/fixed", "basic")
+    premium = resolve_policy("/v1/fixed", "premium")
 
     assert basic is not None and basic.limit == 5
     assert premium is not None and premium.limit == 10
-    assert resolve_policy("/v1/unknown", "ordinary-user") is None
+    assert resolve_policy("/v1/fixed", "unknown") is None
+    assert resolve_policy("/v1/unknown", "basic") is None
 
 
 def test_authorization_fails_closed_when_redis_is_unavailable(monkeypatch) -> None:
@@ -32,9 +33,82 @@ def test_authorization_fails_closed_when_redis_is_unavailable(monkeypatch) -> No
     async def receive():
         return {
             "type": "http.request",
-            "body": b'{"user_id":"outage-user"}',
+            "body": b'{}',
             "more_body": False,
         }
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/authorize",
+            "headers": [
+                (b"x-forwarded-uri", b"/v1/fixed"),
+                (b"x-auth-subject", b"verified-user"),
+                (b"x-auth-tier", b"basic"),
+            ],
+            "query_string": b"",
+            "server": ("test", 80),
+            "client": ("test", 12345),
+            "scheme": "http",
+            "http_version": "1.1",
+        },
+        receive,
+    )
+    monkeypatch.setattr(rate_limit, "rate_limiter", UnavailableLimiter())
+
+    response = asyncio.run(rate_limit.authorize(request))
+
+    assert response.status_code == 503
+
+
+def test_authorization_uses_verified_identity_not_request_body(monkeypatch) -> None:
+    class RecordingLimiter:
+        subject = None
+
+        async def check(self, subject, path, policy):
+            self.subject = subject
+            from app.redis_store import RateLimitDecision
+
+            return RateLimitDecision(allowed=True, remaining=4, retry_after_ms=0)
+
+    async def receive():
+        return {
+            "type": "http.request",
+            "body": b'{"user_id":"forged-user"}',
+            "more_body": False,
+        }
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/authorize",
+            "headers": [
+                (b"x-forwarded-uri", b"/v1/fixed"),
+                (b"x-auth-subject", b"verified-user"),
+                (b"x-auth-tier", b"basic"),
+            ],
+            "query_string": b"",
+            "server": ("test", 80),
+            "client": ("test", 12345),
+            "scheme": "http",
+            "http_version": "1.1",
+        },
+        receive,
+    )
+    limiter = RecordingLimiter()
+    monkeypatch.setattr(rate_limit, "rate_limiter", limiter)
+
+    response = asyncio.run(rate_limit.authorize(request))
+
+    assert response.status_code == 200
+    assert limiter.subject == "verified-user"
+
+
+def test_authorization_rejects_missing_verified_identity() -> None:
+    async def receive():
+        return {"type": "http.request", "body": b"{}", "more_body": False}
 
     request = Request(
         {
@@ -50,11 +124,10 @@ def test_authorization_fails_closed_when_redis_is_unavailable(monkeypatch) -> No
         },
         receive,
     )
-    monkeypatch.setattr(rate_limit, "rate_limiter", UnavailableLimiter())
 
     response = asyncio.run(rate_limit.authorize(request))
 
-    assert response.status_code == 503
+    assert response.status_code == 401
 
 
 def test_rate_limit_keys_isolate_users_and_routes() -> None:

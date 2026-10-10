@@ -1,4 +1,3 @@
-import json
 import math
 import os
 from urllib.parse import urlsplit
@@ -41,26 +40,22 @@ async def readyz() -> JSONResponse:
     "/authorize", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 )
 async def authorize(request: Request) -> Response:
-    try:
-        payload = await request.json()
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return JSONResponse(status_code=400, content={"detail": "Expected a JSON body"})
-
-    user_id = payload.get("user_id") if isinstance(payload, dict) else None
-    if not isinstance(user_id, str) or not user_id.strip() or len(user_id) > 128:
+    subject = request.headers.get("x-auth-subject", "").strip()
+    tier = request.headers.get("x-auth-tier", "").strip()
+    if not subject or len(subject) > 128:
         return JSONResponse(
-            status_code=400,
-            content={"detail": "user_id must be a non-empty string of at most 128 characters"},
+            status_code=401,
+            content={"detail": "Authenticated principal required"},
         )
 
     forwarded_uri = request.headers.get("x-forwarded-uri", "")
     path = urlsplit(forwarded_uri).path
-    policy = resolve_policy(path, user_id)
+    policy = resolve_policy(path, tier)
     if policy is None:
         return JSONResponse(status_code=404, content={"detail": "No rate-limit policy for route"})
 
     try:
-        decision = await rate_limiter.check(user_id.strip(), path, policy)
+        decision = await rate_limiter.check(subject, path, policy)
     except RedisError:
         return JSONResponse(
             status_code=503,

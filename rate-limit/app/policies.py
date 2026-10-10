@@ -32,13 +32,8 @@ _ROUTE_POLICIES: dict[str, dict[str, RateLimitPolicy]] = {
     },
 }
 
-# Demo-only identity mapping. Production tiers must come from authenticated claims or storage.
-_USER_TIERS = {"premium-demo-user": "premium"}
-
-
-def resolve_policy(path: str, user_id: str) -> RateLimitPolicy | None:
+def resolve_policy(path: str, tier: str) -> RateLimitPolicy | None:
     route_policies = _ROUTE_POLICIES.get(path)
     if route_policies is None:
         return None
-    tier = _USER_TIERS.get(user_id, "basic")
-    return route_policies[tier]
+    return route_policies.get(tier)
