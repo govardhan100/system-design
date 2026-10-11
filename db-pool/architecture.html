@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Dockerized FastAPI and PostgreSQL connection-pool architecture using psycopg_pool.">
+  <title>PostgreSQL Connection Pool | Architecture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #173b35;
+      --soft: #385c55;
+      --muted: #6c7e78;
+      --paper: #f1f5f1;
+      --white: #fff;
+      --line: #d9e3dd;
+      --green: #28745d;
+      --green-pale: #e6f2e9;
+      --blue: #397c91;
+      --blue-pale: #e7f1f4;
+      --orange: #bb542e;
+      --orange-pale: #fbede6;
+      --yellow: #e6b348;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      --serif: Iowan Old Style, "Palatino Linotype", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper) radial-gradient(#bfd0c7 0.7px, transparent 0.7px) 0 0 / 18px 18px; color: var(--ink); font: 14px/1.55 var(--sans); }
+    code { font: 0.92em var(--mono); overflow-wrap: anywhere; }
+    .hero { background: var(--ink); color: #f7faf7; }
+    .hero-inner, main { width: min(1160px, calc(100% - 40px)); margin-inline: auto; }
+    .hero-inner { padding: 36px 0 38px; }
+    .eyebrow, .kicker, .node-label { font: 700 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+    .eyebrow { color: #a9d8c4; }
+    h1 { max-width: 800px; margin: 10px 0 8px; font: 500 42px/1.08 var(--serif); }
+    .hero p { max-width: 710px; margin: 0; color: #d2dfd9; }
+    main { padding: 30px 0 60px; }
+    section + section { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+    .kicker { margin-bottom: 7px; color: var(--green); }
+    h2 { margin: 0 0 8px; font: 500 28px/1.15 var(--serif); }
+    .intro { max-width: 740px; margin: 0 0 18px; color: var(--muted); }
+    .diagram { overflow: hidden; border: 1px solid #cad8d0; background: var(--white); box-shadow: 0 12px 28px #193b3510; }
+    .diagram-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 13px 16px; border-bottom: 1px solid var(--line); background: #fbfcfa; }
+    .diagram-head strong { font-size: 12px; }
+    .diagram-head span { color: var(--muted); font: 9px var(--mono); }
+    .flow { display: grid; grid-template-columns: minmax(150px, 1fr) 34px minmax(200px, 1.25fr) 34px minmax(170px, 1fr); align-items: stretch; gap: 9px; padding: 22px 20px 18px; }
+    .node { min-height: 184px; padding: 15px; border: 1px solid var(--line); border-top: 4px solid var(--green); background: #fff; }
+    .node.pool { border-top-color: var(--blue); }
+    .node.db { border-top-color: var(--orange); }
+    .node-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .glyph { display: grid; flex: 0 0 33px; width: 33px; height: 33px; place-items: center; background: #edf4ef; color: var(--green); font: 700 10px var(--mono); }
+    .pool .glyph { background: var(--blue-pale); color: var(--blue); }
+    .db .glyph { background: var(--orange-pale); color: var(--orange); }
+    .node-label { margin-bottom: 3px; color: var(--muted); font-size: 8px; }
+    .node h3 { margin: 0; font-size: 15px; }
+    .node p { margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+    .chip { display: block; margin-top: 6px; padding: 6px 7px; border-left: 2px solid var(--line); background: #f6f8f6; color: var(--soft); font: 9px/1.4 var(--mono); overflow-wrap: anywhere; }
+    .chip.sql { border-color: var(--blue); background: var(--blue-pale); }
+    .chip.pg { border-color: var(--orange); background: var(--orange-pale); }
+    .arrow { position: relative; align-self: center; height: 2px; background: #748d83; }
+    .arrow::after { position: absolute; top: -4px; right: -1px; border: 5px solid transparent; border-left-color: #748d83; content: ""; }
+    .arrow span { position: absolute; bottom: 9px; left: 50%; width: 95px; color: var(--muted); font: 8px var(--mono); text-align: center; transform: translateX(-50%); }
+    .pool-limits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 9px; }
+    .pool-limits div { padding: 6px 4px; background: #f3f7f5; text-align: center; }
+    .pool-limits strong { display: block; color: var(--blue); font: 700 14px var(--mono); }
+    .pool-limits span { display: block; color: var(--muted); font: 8px var(--mono); }
+    .lifecycle { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; border-top: 1px solid var(--line); background: var(--line); }
+    .step { min-width: 0; padding: 12px; background: #fafcfa; }
+    .step b { display: block; margin-bottom: 4px; color: var(--orange); font: 700 9px var(--mono); }
+    .step strong { display: block; margin-bottom: 3px; font-size: 11px; }
+    .step span { display: block; color: var(--muted); font-size: 10px; }
+    .failure-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; padding: 14px 18px; border-top: 1px solid var(--line); }
+    .failure { padding: 9px 10px; border-left: 3px solid var(--yellow); background: #fff8e8; }
+    .failure strong { display: block; margin-bottom: 2px; font: 700 9px var(--mono); }
+    .failure span { display: block; color: var(--muted); font-size: 10px; }
+    .guardrails { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .guardrail { padding-top: 10px; border-top: 3px solid var(--green); }
+    .guardrail:nth-child(2) { border-color: var(--blue); }
+    .guardrail:nth-child(3) { border-color: var(--orange); }
+    .guardrail strong { display: block; margin-bottom: 5px; font-size: 12px; }
+    .guardrail p { margin: 0; color: var(--muted); font-size: 11px; }
+    footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    footer a { color: var(--green); text-underline-offset: 3px; }
+    @media (max-width: 760px) {
+      .flow { grid-template-columns: minmax(130px, 1fr) 25px minmax(160px, 1.2fr) 25px minmax(140px, 1fr); padding-inline: 12px; }
+      .arrow span { width: 68px; font-size: 7px; }
+      .node { padding: 11px; }
+    }
+    @media (max-width: 580px) {
+      .hero-inner, main { width: min(100% - 28px, 1160px); }
+      .hero-inner { padding: 26px 0 28px; }
+      h1 { font-size: 34px; }
+      main { padding-top: 21px; }
+      .flow { grid-template-columns: 1fr; gap: 8px; padding: 14px; }
+      .node { min-height: 0; }
+      .arrow { width: 2px; height: 20px; margin-left: 17px; }
+      .arrow::after { top: auto; right: -4px; bottom: -1px; border: 5px solid transparent; border-top-color: #748d83; }
+      .arrow span { bottom: auto; left: 13px; width: auto; text-align: left; transform: none; }
+      .lifecycle { grid-template-columns: 1fr; }
+      .step { padding: 10px 12px; }
+      .failure-row, .guardrails { grid-template-columns: 1fr; }
+      .failure-row { padding-inline: 14px; }
+      section + section { margin-top: 25px; padding-top: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">Database systems / connection lifecycle</div>
+      <h1>PostgreSQL Connection Pool</h1>
+      <p>A Dockerized FastAPI service borrows bounded PostgreSQL connections through <code>psycopg_pool</code>, returns each lease after use, and reports pool pressure.</p>
+    </div>
+  </header>
+  <main>
+    <section aria-labelledby="system-title">
+      <div class="kicker">01 / System architecture</div>
+      <h2 id="system-title">One pool per API process. Shared database underneath.</h2>
+      <p class="intro">The pool amortizes connection setup and caps the number of concurrent database sessions. The API runs synchronous psycopg calls in FastAPI's worker threadpool; the API and PostgreSQL share the backend, while local demo ports bind only to loopback.</p>
+      <div class="diagram" role="group" aria-label="Dockerized API, connection pool, and PostgreSQL data path">
+        <div class="diagram-head"><strong>Query path and connection ownership</strong><span>LOCAL DEMO · POSTGRES HOST PORT 5433 · API PORT 8003</span></div>
+        <div class="flow">
+          <article class="node">
+            <div class="node-head"><span class="glyph" aria-hidden="true">HTTP</span><div><span class="node-label">Browser / curl</span><h3>Client</h3></div></div>
+            <p>Calls the demo page, health routes, user query, or pool metrics.</p>
+            <span class="chip">GET /demo</span>
+            <span class="chip">GET /users</span>
+            <span class="chip">GET /pool/stats</span>
+          </article>
+          <div class="arrow"><span>HTTP :8003</span></div>
+          <article class="node pool">
+            <div class="node-head"><span class="glyph" aria-hidden="true">POOL</span><div><span class="node-label">API container</span><h3>FastAPI + psycopg_pool</h3></div></div>
+            <p>One lifespan-managed pool borrows a lease per query and returns it on context exit.</p>
+            <span class="chip sql">with pool.connection() as conn</span>
+            <div class="pool-limits"><div><strong>2</strong><span>MIN WARM</span></div><div><strong>10</strong><span>MAX OPEN</span></div><div><strong>2s</strong><span>WAIT LIMIT</span></div></div>
+          </article>
+          <div class="arrow"><span>postgres protocol<br>leased connection</span></div>
+          <article class="node db">
+            <div class="node-head"><span class="glyph" aria-hidden="true">SQL</span><div><span class="node-label">Database container</span><h3>PostgreSQL 17</h3></div></div>
+            <p>Owns the persistent database and seeded demo table.</p>
+            <span class="chip pg">mydb · users(id, name)</span>
+            <span class="chip pg">Host access: 127.0.0.1:5433 only</span>
+            <span class="chip">Named volume: postgres-data</span>
+          </article>
+        </div>
+        <div class="lifecycle" aria-label="Connection pool request lifecycle">
+          <div class="step"><b>01 / REQUEST</b><strong>HTTP handler starts</strong><span>Sync endpoint runs in FastAPI's worker threadpool.</span></div>
+          <div class="step"><b>02 / ACQUIRE</b><strong>Borrow a lease</strong><span>Pool returns an idle connection or opens one within max_size.</span></div>
+          <div class="step"><b>03 / QUERY</b><strong>Execute SQL</strong><span><code>SELECT id, name FROM users</code></span></div>
+          <div class="step"><b>04 / RELEASE</b><strong>Return connection</strong><span>Context manager returns the lease to the pool, not to the caller.</span></div>
+          <div class="step"><b>05 / REUSE</b><strong>Next request borrows it</strong><span>Connection setup is amortized across many API requests.</span></div>
+        </div>
+        <div class="failure-row">
+          <div class="failure"><strong>Pool saturated</strong><span>Wait exceeds configured timeout → API returns 503.</span></div>
+          <div class="failure"><strong>Database unavailable</strong><span>Readiness fails; query route returns 503 instead of leaking a connection.</span></div>
+          <div class="failure"><strong>Shutdown</strong><span>FastAPI lifespan closes the pool and its worker connections.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="bounds-title">
+      <div class="kicker">02 / Operating boundaries</div>
+      <h2 id="bounds-title">Bound concurrency. Observe reuse.</h2>
+      <div class="guardrails">
+        <article class="guardrail"><strong>Pool size is per process</strong><p>With multiple API replicas, total potential database connections are approximately replica count × max_size. Set limits with the PostgreSQL connection budget in mind.</p></article>
+        <article class="guardrail"><strong>Always use the connection context</strong><p><code>with pool.connection()</code> guarantees the lease returns on success or exception; never keep a connection globally checked out.</p></article>
+        <article class="guardrail"><strong>Pool stats are live signals</strong><p><code>/pool/stats</code> reports open/available connections and queued requests; the demo refreshes these while concurrent reads run.</p></article>
+      </div>
+    </section>
+
+    <footer><a href="README.md">Connection-pool demo README</a><span>Docker Compose · psycopg 3 · PostgreSQL 17</span></footer>
+  </main>
+</body>
+</html>
