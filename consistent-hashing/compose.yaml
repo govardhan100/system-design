@@ -1,0 +1,32 @@
+services:
+  api:
+    build: .
+    environment:
+      APP_PORT: ${APP_PORT:-8004}
+      DEFAULT_VNODES: ${DEFAULT_VNODES:-100}
+      REPLICATION_FACTOR: ${REPLICATION_FACTOR:-3}
+      HASH_ALGORITHM: ${HASH_ALGORITHM:-md5_32}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8004}:8004"
+    networks:
+      - hashing-net
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/readyz', timeout=2)"
+      interval: 4s
+      timeout: 3s
+      retries: 10
+
+  tests:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "pytest", "-v", "-p", "no:cacheprovider"]
+    networks:
+      - hashing-net
+
+networks:
+  hashing-net:
+    name: consistent-hashing-net
