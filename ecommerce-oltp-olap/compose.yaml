@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ecommerce-oltp-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_oltp}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ecommerce_oltp}"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: ecommerce-olap-clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse123}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8124}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9001}:9000"
+    volumes:
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - chdata:/var/lib/clickhouse/
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build: .
+    container_name: ecommerce-app-api
+    environment:
+      APP_PORT: ${APP_PORT:-8005}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_oltp}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_HTTP_PORT: 8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse123}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8005}:8005"
+    networks:
+      - ecommerce-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/readyz', timeout=2)"
+      interval: 4s
+      timeout: 3s
+      retries: 15
+
+  tests:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "pytest", "-v", "-p", "no:cacheprovider"]
+    networks:
+      - ecommerce-net
+
+volumes:
+  pgdata:
+  chdata:
+
+networks:
+  ecommerce-net:
+    name: ecommerce-architecture-net
