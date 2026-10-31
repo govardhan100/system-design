@@ -6,34 +6,76 @@ Open [architecture.html](architecture.html) for the deep-dive theoretical guide 
 
 ---
 
-## Architecture Topology
+## Architecture Diagram: How the Architecture Works
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                              Application                               │
+│                          E-commerce website                            │
+│           (Shopping carts, customer checkout, traffic surges)          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 1. Customer Checkouts (ACID Point Writes)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     Docker container — PostgreSQL                      │
+│                        OLTP: stores live orders                        │
+│            (3NF Normalized: customers, products, orders, items)        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 2. Incremental Delta Extraction
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                          ETL / ELT pipeline                            │
+│                       Moves and transforms data                        │
+│       (High-water mark, wide denormalization, profit computation)      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 3. Batch Block Ingestion
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     Docker container — ClickHouse                      │
+│                       OLAP: analyzes sales data                        │
+│         (Columnar MergeTree, 8192-row granules, 10x-15x compression)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 4. Sub-Second Analytical Queries
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                              BI dashboard                              │
+│                  Revenue, trends and business insights                 │
+│          (Real-time GMV, AOV, Margin %, Trend lines, Categories)       │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ```mermaid
-flowchart LR
-    subgraph ClientLayer ["1. Application Layer"]
-        Storefront["🛒 E-Commerce Website<br/>(Storefront Simulator)"]
+flowchart TD
+    classDef appStyle fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef pgStyle fill:#1e293b,stroke:#60a5fa,stroke-width:2px,color:#f8fafc;
+    classDef etlStyle fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef chStyle fill:#1e293b,stroke:#34d399,stroke-width:2px,color:#f8fafc;
+    classDef biStyle fill:#1e293b,stroke:#a78bfa,stroke-width:2px,color:#f8fafc;
+
+    subgraph Layer1 ["1. Application"]
+        App["🛒 Application<br/><b>E-commerce website</b><br/>• Storefront catalog & cart<br/>• Generates live transactions<br/>• Simulated traffic surges"]:::appStyle
     end
 
-    subgraph OLTPLayer ["2. Relational Transactional Store (OLTP)"]
-        PG[("🐘 Docker: PostgreSQL 17<br/>• Normalized 3NF Tables<br/>• ACID Transactions<br/>• Point Writes & Locks")]
+    subgraph Layer2 ["2. Relational Transactional Store (OLTP)"]
+        PG[("🐘 Docker container — PostgreSQL<br/><b>OLTP: stores live orders</b><br/>• 3NF normalized tables: orders, items<br/>• ACID transaction guarantees<br/>• Row-level locks & fast point lookups")]:::pgStyle
     end
 
-    subgraph PipelineLayer ["3. Synchronization Bridge"]
-        ETL["🔄 ETL / ELT Pipeline<br/>• High-Water Mark Polling<br/>• Wide-Denormalization<br/>• Derived Profit Computation<br/>• Idempotent Micro-Batches"]
+    subgraph Layer3 ["3. Synchronization Bridge"]
+        ETL["🔄 ETL / ELT pipeline<br/><b>Moves and transforms data</b><br/>• High-water mark checkpoint polling<br/>• Wide denormalization into sales facts<br/>• In-flight financial profit computation<br/>• Idempotent micro-batch loading"]:::etlStyle
     end
 
-    subgraph OLAPLayer ["4. Analytical Warehouse (OLAP)"]
-        CH[("⚡ Docker: ClickHouse<br/>• Columnar MergeTree<br/>• SIMD Vector Scans<br/>• Granules (8192 rows)<br/>• 10x-15x Compression")]
+    subgraph Layer4 ["4. Analytical Warehouse (OLAP)"]
+        CH[("⚡ Docker container — ClickHouse<br/><b>OLAP: analyzes sales data</b><br/>• Columnar ReplacingMergeTree<br/>• Sparse primary keys & 8,192-row granules<br/>• SIMD vector execution & 10x-15x compression")]:::chStyle
     end
 
-    subgraph BILayer ["5. Business Intelligence Layer"]
-        BI["📊 Real-Time BI Dashboard<br/>• Gross Merchandise Value (GMV)<br/>• Profit & Margin Trajectories<br/>• Category & Regional Slicing<br/>• Sub-Second Query Speeds"]
+    subgraph Layer5 ["5. Business Intelligence Layer"]
+        BI["📊 BI dashboard<br/><b>Revenue, trends and business insights</b><br/>• Gross Merchandise Value (GMV) & AOV<br/>• Daily revenue trajectories & profit margins<br/>• Category and regional sales distributions<br/>• 50x–100x query acceleration"]:::biStyle
     end
 
-    Storefront -->|1. Customer Orders & Baskets| PG
-    PG -->|2. Incremental Delta Rows| ETL
-    ETL -->|3. Flattened Fact Batches| CH
-    CH -->|4. Vectorized Query Results| BI
+    App -->|"1. Live orders & checkout writes"| PG
+    PG -->|"2. Delta extraction (WHERE id > last_checkpoint)"| ETL
+    ETL -->|"3. Transformed columnar blocks"| CH
+    CH -->|"4. Sub-second vectorized analytical queries"| BI
 ```
 
 ---

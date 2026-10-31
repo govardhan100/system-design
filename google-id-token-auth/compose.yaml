@@ -1,0 +1,32 @@
+services:
+  google-id-token-app:
+    build: .
+    container_name: google-id-token-auth-app
+    environment:
+      APP_PORT: ${APP_PORT:-8005}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SESSION_SECRET: ${SESSION_SECRET:-super-secret-localhost-session-key}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8005}:8005"
+    networks:
+      - id-token-net
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/healthz', timeout=2)"
+      interval: 4s
+      timeout: 3s
+      retries: 10
+
+  tests:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "pytest", "-v", "-p", "no:cacheprovider"]
+    networks:
+      - id-token-net
+
+networks:
+  id-token-net:
+    name: google-id-token-net

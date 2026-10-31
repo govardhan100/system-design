@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Google ID Token Identity Demo: OpenID Connect flow from Browser to Google to Localhost Application with cryptographic JWKS verification.">
+  <title>Google ID Token Auth Lab | Localhost Identity Verification</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Google Identity Services (GSI) Client SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <!-- Google Colors Shield Icon -->
+            <path d="M12 2L3 6V11.5C3 17 6.8 21.7 12 23C17.2 21.7 21 17 21 11.5V6L12 2Z" fill="#1e293b" stroke="#38bdf8" stroke-width="1.8"/>
+            <path d="M12 6.5C8.96 6.5 6.5 8.96 6.5 12C6.5 15.04 8.96 17.5 12 17.5C15.04 17.5 17.5 15.04 17.5 12C17.5 11.66 17.47 11.33 17.41 11H12V13.2H15.11C14.78 14.28 13.5 15.2 12 15.2C10.23 15.2 8.8 13.77 8.8 12C8.8 10.23 10.23 8.8 12 8.8C12.8 8.8 13.52 9.09 14.09 9.57L15.7 7.96C14.71 7.05 13.43 6.5 12 6.5Z" fill="#38bdf8"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Google ID Token Auth Lab</h1>
+          <p class="subtitle">OpenID Connect Identity Flow &bull; Browser &rarr; Google &rarr; Localhost Application</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-pill" id="app-status-badge">
+          <span class="status-dot online"></span>
+          <span id="backend-status-text">Localhost Backend: Active</span>
+        </div>
+        <a href="/architecture" class="btn-ghost" title="System Architecture & Security Spec">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          Architecture Docs
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Interactive System Flow Banner -->
+  <section class="flow-banner">
+    <div class="flow-container">
+      <div class="flow-step active" id="step-node-1">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <span class="step-title">Developer / Browser</span>
+          <span class="step-desc">Initiates Sign-In prompt</span>
+        </div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+
+      <div class="flow-step" id="step-node-2">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <span class="step-title">Google Login</span>
+          <span class="step-desc">Authenticates & signs OIDC JWT</span>
+        </div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+
+      <div class="flow-step" id="step-node-3">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <span class="step-title">Google ID Token</span>
+          <span class="step-desc">Signed RS256 token received</span>
+        </div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+
+      <div class="flow-step" id="step-node-4">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <span class="step-title">Your App (localhost)</span>
+          <span class="step-desc">Verifies JWKS & shows identity</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Grid -->
+  <main class="main-layout">
+    <!-- Left Column: Ingestion & Auth Triggers -->
+    <div class="column left-col">
+      <!-- Card 1: Configuration -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            OAuth 2.0 Client Configuration
+          </div>
+          <span class="badge badge-info" id="mode-badge">Simulator & Live</span>
+        </div>
+        <div class="card-body">
+          <label class="form-label" for="google-client-id-input">
+            Google Client ID (Web Application)
+          </label>
+          <div class="input-group">
+            <input 
+              type="text" 
+              id="google-client-id-input" 
+              class="form-control mono" 
+              placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+              spellcheck="false"
+            />
+            <button class="btn btn-secondary" id="save-client-id-btn" type="button">Apply</button>
+          </div>
+          <p class="form-hint">
+            Leave blank to run instant simulations, or paste your Google Cloud Web Client ID to authenticate your real Google Account on <code>http://localhost:8005</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Card 2: Login Modes & Token Triggers -->
+      <div class="card">
+        <div class="tab-nav">
+          <button class="tab-btn active" id="tab-btn-sim" type="button">
+            <span class="tab-icon">&bull;</span>
+            1-Click Simulator
+          </button>
+          <button class="tab-btn" id="tab-btn-google" type="button">
+            <span class="tab-icon">&bull;</span>
+            Live Google Sign-In
+          </button>
+          <button class="tab-btn" id="tab-btn-manual" type="button">
+            <span class="tab-icon">&bull;</span>
+            Paste Raw Token
+          </button>
+        </div>
+
+        <!-- Tab 1: Simulator Pane -->
+        <div class="tab-pane active" id="pane-sim">
+          <div class="sim-intro">
+            <p>
+              Instantly test the full verification pipeline without configuring Google Cloud Console credentials. Generates a valid RSA-signed OIDC ID Token mimicking Google's identity payload.
+            </p>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label" for="sim-name-input">User Name</label>
+              <input type="text" id="sim-name-input" class="form-control" value="Alex Morgan" />
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label" for="sim-email-input">Email Address</label>
+              <input type="email" id="sim-email-input" class="form-control" value="developer.alex@gmail.com" />
+            </div>
+          </div>
+
+          <div class="preset-pills">
+            <span class="preset-label">Quick Presets:</span>
+            <button class="pill-btn" type="button" data-name="Alex Morgan" data-email="developer.alex@gmail.com">
+              Alex Morgan (Dev)
+            </button>
+            <button class="pill-btn" type="button" data-name="Dr. Elena Vance" data-email="elena.vance@blackmesa.org">
+              Elena Vance (Workspace)
+            </button>
+            <button class="pill-btn" type="button" data-name="Marcus Wright" data-email="marcus.wright@gmail.com">
+              Marcus Wright
+            </button>
+          </div>
+
+          <div class="action-buttons-grid">
+            <button class="btn btn-primary btn-glow" id="run-sim-btn" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              Generate & Verify Token
+            </button>
+            <button class="btn btn-warning" id="sim-expired-btn" type="button" title="Test how backend handles expired ID Tokens">
+              Simulate Expired Token
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Live Google Sign-In Pane -->
+        <div class="tab-pane" id="pane-google">
+          <div class="gsi-container">
+            <div id="gsi-warning" class="alert-box alert-warning">
+              <strong>Client ID Required for Live Sign-In:</strong>
+              Please enter your Google Web Client ID in the configuration box above to render the official Google Sign-In button.
+            </div>
+
+            <div id="gsi-button-wrapper" class="gsi-btn-center">
+              <!-- Official Google Sign-In button rendered by Google Identity Services -->
+              <div id="g_id_signin_placeholder"></div>
+            </div>
+
+            <div class="gsi-guidelines">
+              <h4>Google Cloud Setup Checklist:</h4>
+              <ol>
+                <li>In Google Cloud Console &rarr; APIs & Services &rarr; Credentials:</li>
+                <li>Create <strong>OAuth 2.0 Client ID</strong> (Web Application).</li>
+                <li>Add to <strong>Authorized JavaScript origins</strong>: <code>http://localhost:8005</code></li>
+                <li>Add to <strong>Authorized redirect URIs</strong>: <code>http://localhost:8005</code></li>
+                <li>Copy the Client ID and paste it above.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Paste Raw Token Pane -->
+        <div class="tab-pane" id="pane-manual">
+          <div class="form-group">
+            <label class="form-label" for="manual-token-input">
+              Paste Raw Google ID Token (JWT)
+            </label>
+            <textarea 
+              id="manual-token-input" 
+              class="form-control mono text-sm" 
+              rows="5" 
+              placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...ey...sig..."
+            ></textarea>
+          </div>
+          <button class="btn btn-primary" id="verify-manual-btn" type="button">
+            Verify With Localhost App
+          </button>
+        </div>
+      </div>
+
+      <!-- Card 3: Raw JWT Visualizer -->
+      <div class="card" id="jwt-inspector-card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            Raw Google ID Token (RFC 7519 JWT)
+          </div>
+          <button class="btn-xs btn-ghost" id="copy-token-btn" type="button">Copy Token</button>
+        </div>
+        <div class="card-body">
+          <div class="jwt-legend">
+            <span class="legend-item"><span class="legend-dot dot-header"></span> Header (alg, kid)</span>
+            <span class="legend-item"><span class="legend-dot dot-payload"></span> Payload (Claims & Identity)</span>
+            <span class="legend-item"><span class="legend-dot dot-sig"></span> RS256 Signature</span>
+          </div>
+          <div class="jwt-colored-display" id="jwt-colored-box">
+            <span class="jwt-placeholder">Awaiting Google ID Token authentication...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Verified Identity & Localhost Application Engine -->
+    <div class="column right-col">
+      <!-- Card: User Identity Display (Show to User) -->
+      <div class="card identity-card" id="identity-card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Your Application (localhost) &bull; Verified User Identity
+          </div>
+          <span class="badge badge-success" id="auth-state-badge">Waiting For Auth</span>
+        </div>
+
+        <div class="card-body">
+          <!-- Empty State -->
+          <div class="empty-state" id="identity-empty-state">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3>No Authenticated User Yet</h3>
+            <p>Click "Generate & Verify Token" on the left or sign in with your Google Account to extract and verify user identity.</p>
+          </div>
+
+          <!-- Verified User Profile (Populated dynamically) -->
+          <div class="user-profile-view hidden" id="user-profile-view">
+            <div class="profile-header">
+              <div class="avatar-wrap">
+                <img id="user-avatar" src="" alt="Google User Avatar" class="user-avatar-img" />
+                <span class="avatar-check">&check;</span>
+              </div>
+              <div class="profile-meta">
+                <div class="user-name-row">
+                  <h2 id="user-full-name">Alex Morgan</h2>
+                  <span class="badge badge-verified" id="email-verified-badge">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Google Verified
+                  </span>
+                </div>
+                <div class="user-email-row" id="user-email">developer.alex@gmail.com</div>
+                <div class="user-sub-row">
+                  <span class="sub-label">Google Subject ID (sub):</span>
+                  <code class="sub-code" id="user-sub-id">109876543210987654321</code>
+                </div>
+              </div>
+            </div>
+
+            <!-- Security Verification Checks Checklist -->
+            <div class="security-checklist">
+              <div class="checklist-title">Localhost Verification Engine Audit</div>
+              <div class="checklist-grid">
+                <div class="check-item passed" id="check-signature">
+                  <span class="check-icon">&check;</span>
+                  <div class="check-info">
+                    <span class="check-name">RS256 Signature</span>
+                    <span class="check-detail" id="detail-signature">Verified with Google JWKS</span>
+                  </div>
+                </div>
+
+                <div class="check-item passed" id="check-issuer">
+                  <span class="check-icon">&check;</span>
+                  <div class="check-info">
+                    <span class="check-name">Issuer (iss)</span>
+                    <span class="check-detail" id="detail-issuer">accounts.google.com</span>
+                  </div>
+                </div>
+
+                <div class="check-item passed" id="check-audience">
+                  <span class="check-icon">&check;</span>
+                  <div class="check-info">
+                    <span class="check-name">Audience (aud)</span>
+                    <span class="check-detail" id="detail-audience">Matches App Client ID</span>
+                  </div>
+                </div>
+
+                <div class="check-item passed" id="check-expiry">
+                  <span class="check-icon">&check;</span>
+                  <div class="check-info">
+                    <span class="check-name">Expiration (exp)</span>
+                    <span class="check-detail" id="detail-expiry">Valid &bull; 59m remaining</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Localhost Session & Protected Endpoint Test -->
+            <div class="session-block">
+              <div class="session-header">
+                <div>
+                  <strong>Localhost Application Session Established</strong>
+                  <p class="session-desc">Your app issued a local session token mapping to this Google user ID.</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="test-protected-btn" type="button">
+                  Test Protected Endpoint (GET /api/me)
+                </button>
+              </div>
+              <div class="protected-response hidden" id="protected-response-box">
+                <div class="protected-response-title">Protected Endpoint Response:</div>
+                <pre class="code-pre" id="protected-response-code"></pre>
+              </div>
+            </div>
+
+            <!-- Claims Inspector Table -->
+            <div class="claims-section">
+              <div class="claims-header">
+                <span class="claims-title">Decoded OpenID Connect Claims</span>
+                <span class="claims-count" id="claims-count-badge">12 claims</span>
+              </div>
+              <div class="table-wrap">
+                <table class="claims-table" id="claims-table">
+                  <thead>
+                    <tr>
+                      <th>Claim Key</th>
+                      <th>Value</th>
+                      <th>OIDC RFC 7519 Purpose</th>
+                    </tr>
+                  </thead>
+                  <tbody id="claims-tbody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Clear Action -->
+            <div class="profile-actions">
+              <button class="btn btn-ghost" id="clear-session-btn" type="button">
+                Sign Out / Reset Session
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card: Live Google Public Keys (JWKS) Inspector -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+            </svg>
+            Google Public Certificates (JWKS Endpoint)
+          </div>
+          <button class="btn-xs btn-ghost" id="fetch-jwks-btn" type="button">Refresh JWKS</button>
+        </div>
+        <div class="card-body">
+          <p class="text-sm text-muted">
+            Google regularly rotates RSA keypairs at <a href="https://www.googleapis.com/oauth2/v3/certs" target="_blank" rel="noopener" class="link-sky">https://www.googleapis.com/oauth2/v3/certs</a>. Your application fetches and caches these public keys to verify ID token signatures cryptographically.
+          </p>
+          <div class="jwks-preview" id="jwks-keys-preview">
+            <span class="text-muted">Loading live Google certificates...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Script -->
+  <script src="/static/app.js"></script>
+</body>
+</html>
